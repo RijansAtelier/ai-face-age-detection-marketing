@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+</head>
+<body>
+    <div class="dashboard">
+        <header class="header">
+            <h1>📊 Detection Analytics Dashboard</h1>
+            <div class="header-actions">
+                <span id="campaignName">Loading...</span>
+                <a href="{{ url_for('logout') }}" class="btn-logout">Logout</a>
+            </div>
+        </header>
+
+        <div class="analytics-cards">
+            <div class="card">
+                <h3>Total Detections</h3>
+                <p class="big-number" id="totalDetections">0</p>
+            </div>
+            <div class="card">
+                <h3>Today</h3>
+                <p class="big-number" id="todayDetections">0</p>
+            </div>
+            <div class="card">
+                <h3>This Week</h3>
+                <p class="big-number" id="weekDetections">0</p>
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <div class="panel">
+                <h2>Gender Distribution</h2>
+                <div id="genderChart" class="chart"></div>
+            </div>
+
+            <div class="panel">
+                <h2>Age Distribution</h2>
+                <div id="ageChart" class="chart"></div>
+            </div>
+        </div>
+
+        <div class="panel filters-panel">
+            <h2>Filters & Actions</h2>
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Start Date</label>
+                    <input type="date" id="startDate">
+                </div>
+                <div class="filter-group">
+                    <label>End Date</label>
+                    <input type="date" id="endDate">
+                </div>
+                <div class="filter-group">
+                    <label>Gender</label>
+                    <select id="genderFilter">
+                        <option value="all">All</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Age Range</label>
+                    <select id="ageFilter">
+                        <option value="all">All</option>
+                        <option value="0-2">0-2</option>
+                        <option value="4-6">4-6</option>
+                        <option value="8-12">8-12</option>
+                        <option value="15-20">15-20</option>
+                        <option value="25-32">25-32</option>
+                        <option value="38-43">38-43</option>
+                        <option value="48-53">48-53</option>
+                        <option value="60+">60+</option>
+                    </select>
+                </div>
+            </div>
+            <div class="action-buttons">
+                <button id="applyFilters" class="btn-primary">Apply Filters</button>
+                <button id="generateReport" class="btn-success">Generate PDF Report</button>
+                <button id="newCampaign" class="btn-warning">Start New Campaign</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Recent Detections</h2>
+            <div class="table-wrapper">
+                <table id="detectionsTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Gender</th>
+                            <th>Age Range</th>
+                            <th>Confidence</th>
+                            <th>Timestamp</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detectionsBody">
+                        <tr><td colspan="5">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentFilters = {};
+
+        async function loadAnalytics() {
+            try {
+                const response = await fetch('/api/analytics');
+                const data = await response.json();
+                
+                document.getElementById('totalDetections').textContent = data.total_detections;
+                document.getElementById('todayDetections').textContent = data.today_count;
+                document.getElementById('weekDetections').textContent = data.week_count;
+                document.getElementById('campaignName').textContent = data.campaign_name;
+                
+                renderGenderChart(data.gender_distribution);
+                renderAgeChart(data.age_distribution);
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+            }
+        }
+
+        async function loadDetections() {
+            try {
+                const params = new URLSearchParams(currentFilters);
+                const response = await fetch(`/api/detections?${params}`);
+                const data = await response.json();
+                
+                const tbody = document.getElementById('detectionsBody');
+                if (data.detections.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5">No detections found</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = data.detections.map(d => `
+                    <tr>
+                        <td>${d.id}</td>
+                        <td>${d.gender}</td>
+                        <td>${d.age_range}</td>
+                        <td>${d.confidence}</td>
+                        <td>${new Date(d.timestamp).toLocaleString()}</td>
+                    </tr>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading detections:', error);
+            }
+        }
+
+        function renderGenderChart(data) {
+            const chart = document.getElementById('genderChart');
+            chart.innerHTML = Object.entries(data).map(([gender, stats]) => `
+                <div class="bar-item">
+                    <div class="bar-label">${gender}</div>
+                    <div class="bar-container">
+                        <div class="bar" style="width: ${stats.percentage}%">
+                            ${stats.count} (${stats.percentage}%)
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderAgeChart(data) {
+            const chart = document.getElementById('ageChart');
+            chart.innerHTML = Object.entries(data).map(([age, stats]) => `
+                <div class="bar-item">
+                    <div class="bar-label">${age}</div>
+                    <div class="bar-container">
+                        <div class="bar bar-age" style="width: ${stats.percentage}%">
+                            ${stats.count} (${stats.percentage}%)
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('applyFilters').addEventListener('click', function() {
+            currentFilters = {
+                start_date: document.getElementById('startDate').value,
+                end_date: document.getElementById('endDate').value,
+                gender: document.getElementById('genderFilter').value,
+                age_range: document.getElementById('ageFilter').value
+            };
+            loadDetections();
+            loadAnalytics();
+        });
+
+        document.getElementById('generateReport').addEventListener('click', async function() {
+            try {
+                this.disabled = true;
+                this.textContent = 'Generating...';
+                
+                const response = await fetch('/api/generate-report', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ filters: currentFilters })
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Detection_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                } else {
+                    alert('Error generating report');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                this.disabled = false;
+                this.textContent = 'Generate PDF Report';
+            }
+        });
+
+        document.getElementById('newCampaign').addEventListener('click', async function() {
+            const campaignName = prompt('Enter new campaign name:');
+            if (!campaignName) return;
+            
+            if (!confirm('Starting a new campaign will archive all previous data. Continue?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/campaign/new', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: campaignName })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        loadAnalytics();
+        loadDetections();
+        
+        setInterval(() => {
+            loadAnalytics();
+            loadDetections();
+        }, 10000);
+    </script>
+</body>
+</html>

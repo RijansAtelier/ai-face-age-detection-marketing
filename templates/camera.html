@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Age & Gender Detection System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='camera.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 Real-Time Age & Gender Detection</h1>
+            <p>Point your camera and let AI detect age and gender</p>
+            <a href="{{ url_for('login') }}" class="admin-link">Admin Login</a>
+        </header>
+
+        <div class="main-content">
+            <div class="camera-section">
+                <div class="video-container">
+                    <video id="video" autoplay></video>
+                    <canvas id="canvas"></canvas>
+                </div>
+                <div class="controls">
+                    <button id="startBtn" class="btn-primary">Start Camera</button>
+                    <button id="stopBtn" class="btn-secondary" disabled>Stop Camera</button>
+                    <button id="captureBtn" class="btn-accent" disabled>Detect Faces</button>
+                </div>
+            </div>
+
+            <div class="results-section">
+                <h2>Detection Results</h2>
+                <div id="results" class="results-grid"></div>
+                <div id="stats" class="stats-card">
+                    <h3>Live Statistics</h3>
+                    <p>Total Detections Today: <span id="totalCount">0</span></p>
+                    <p>Last Detection: <span id="lastTime">-</span></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h3>How It Works</h3>
+            <ul>
+                <li>Click "Start Camera" to activate your webcam</li>
+                <li>Position faces within the camera view</li>
+                <li>Click "Detect Faces" to analyze age and gender</li>
+                <li>All detections are saved in real-time for marketing analytics</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const results = document.getElementById('results');
+        let stream = null;
+        let detectionsToday = 0;
+
+        startBtn.addEventListener('click', async function() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 } 
+                });
+                video.srcObject = stream;
+                canvas.width = 640;
+                canvas.height = 480;
+                
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                captureBtn.disabled = false;
+            } catch (err) {
+                alert('Error accessing camera: ' + err.message);
+            }
+        });
+
+        stopBtn.addEventListener('click', function() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                captureBtn.disabled = true;
+            }
+        });
+
+        captureBtn.addEventListener('click', async function() {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = canvas.toDataURL('image/jpeg');
+            
+            captureBtn.disabled = true;
+            captureBtn.textContent = 'Detecting...';
+            
+            try {
+                const response = await fetch('/api/detect', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ image: imageData })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data.detections);
+                    detectionsToday += data.count;
+                    document.getElementById('totalCount').textContent = detectionsToday;
+                    document.getElementById('lastTime').textContent = new Date().toLocaleTimeString();
+                    
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    data.detections.forEach(det => {
+                        ctx.strokeStyle = '#00ff00';
+                        ctx.lineWidth = 3;
+                        ctx.strokeRect(det.bbox.x, det.bbox.y, det.bbox.w, det.bbox.h);
+                        
+                        ctx.fillStyle = '#00ff00';
+                        ctx.font = '16px Arial';
+                        ctx.fillText(`${det.gender}, ${det.age}`, det.bbox.x, det.bbox.y - 10);
+                    });
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            } catch (error) {
+                alert('Detection failed: ' + error.message);
+            } finally {
+                captureBtn.disabled = false;
+                captureBtn.textContent = 'Detect Faces';
+            }
+        });
+
+        function displayResults(detections) {
+            if (detections.length === 0) {
+                results.innerHTML = '<p class="no-results">No faces detected. Try again.</p>';
+                return;
+            }
+            
+            results.innerHTML = detections.map((det, idx) => `
+                <div class="result-card">
+                    <h4>Person ${idx + 1}</h4>
+                    <p><strong>Gender:</strong> ${det.gender}</p>
+                    <p><strong>Age Range:</strong> ${det.age}</p>
+                    <p><strong>Confidence:</strong> ${det.confidence}</p>
+                </div>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
