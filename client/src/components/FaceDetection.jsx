@@ -12,14 +12,15 @@ function FaceDetection({ onDetection }) {
   const detectionIntervalRef = useRef(null);
   const detectionBufferRef = useRef([]);
   const previousAgeRef = useRef(null);
-  const BUFFER_SIZE = 50;
-  const MIN_FACE_SIZE = 180;
-  const MIN_DETECTION_SCORE = 0.8;
+  const BUFFER_SIZE = 80;
+  const MIN_FACE_SIZE = 160;
+  const MIN_DETECTION_SCORE = 0.7;
   const MIN_AGE = 5;
   const MAX_AGE = 100;
-  const TEMPORAL_SMOOTHING_FACTOR = 0.8;
-  const MAX_AGE_JUMP = 3;
-  const OUTLIER_THRESHOLD = 1.2;
+  const TEMPORAL_SMOOTHING_FACTOR = 0.85;
+  const MAX_AGE_JUMP = 2;
+  const OUTLIER_THRESHOLD = 1.0;
+  const MIN_LANDMARK_QUALITY = 0.5;
 
   useEffect(() => {
     const loadModels = async () => {
@@ -75,7 +76,7 @@ function FaceDetection({ onDetection }) {
   };
 
   const removeOutliers = (detections) => {
-    if (detections.length < 7) return detections;
+    if (detections.length < 10) return detections;
     
     const ages = detections.map(d => d.age).sort((a, b) => a - b);
     const q1Index = Math.floor(ages.length * 0.25);
@@ -88,34 +89,55 @@ function FaceDetection({ onDetection }) {
     
     let filtered = detections.filter(d => d.age >= lowerBound && d.age <= upperBound);
     
-    if (filtered.length < 3) return detections;
+    if (filtered.length < 5) return detections;
     
     const trimmedAges = filtered.map(d => d.age).sort((a, b) => a - b);
-    const trimAmount = Math.floor(trimmedAges.length * 0.1);
+    const trimAmount = Math.floor(trimmedAges.length * 0.15);
     const trimmedMean = trimmedAges.slice(trimAmount, trimmedAges.length - trimAmount)
       .reduce((a, b) => a + b, 0) / (trimmedAges.length - 2 * trimAmount);
     
-    const stdDev = Math.sqrt(
-      trimmedAges.reduce((sum, age) => sum + Math.pow(age - trimmedMean, 2), 0) / trimmedAges.length
-    );
+    const mad = trimmedAges.map(age => Math.abs(age - trimmedMean)).sort((a, b) => a - b);
+    const medianMAD = mad[Math.floor(mad.length / 2)];
+    const threshold = 2.5 * medianMAD;
     
-    return filtered.filter(d => Math.abs(d.age - trimmedMean) <= 2 * stdDev);
+    const robustFiltered = filtered.filter(d => Math.abs(d.age - trimmedMean) <= Math.max(threshold, 3));
+    
+    return robustFiltered.length >= 5 ? robustFiltered : filtered;
   };
 
   const calculateLandmarkQuality = (landmarks) => {
-    if (!landmarks || !landmarks.positions) return 0.5;
+    if (!landmarks || !landmarks.positions) return 0.3;
     const positions = landmarks.positions;
-    if (positions.length < 68) return 0.5;
+    if (positions.length < 68) return 0.3;
     
     const jawLine = positions.slice(0, 17);
     const eyebrows = positions.slice(17, 27);
     const nose = positions.slice(27, 36);
     const eyes = positions.slice(36, 48);
+    const mouth = positions.slice(48, 68);
     
-    const symmetryScore = 1.0 - Math.abs((eyebrows[0].x - eyebrows[9].x) - (eyes[0].x - eyes[6].x)) / 100;
+    const leftEyeCenter = { x: (eyes[0].x + eyes[3].x) / 2, y: (eyes[0].y + eyes[3].y) / 2 };
+    const rightEyeCenter = { x: (eyes[6].x + eyes[9].x) / 2, y: (eyes[6].y + eyes[9].y) / 2 };
+    
+    const eyeDistance = Math.sqrt(
+      Math.pow(rightEyeCenter.x - leftEyeCenter.x, 2) + 
+      Math.pow(rightEyeCenter.y - leftEyeCenter.y, 2)
+    );
+    
+    const horizontalSymmetry = 1.0 - Math.min(1.0, Math.abs(leftEyeCenter.x + rightEyeCenter.x - 2 * nose[4].x) / eyeDistance);
+    
+    const eyeYDiff = Math.abs(leftEyeCenter.y - rightEyeCenter.y);
+    const tiltScore = 1.0 - Math.min(1.0, eyeYDiff / (eyeDistance * 0.15));
+    
+    const faceWidth = Math.abs(jawLine[0].x - jawLine[16].x);
+    const eyeSpacing = eyeDistance / faceWidth;
+    const proportionScore = eyeSpacing >= 0.25 && eyeSpacing <= 0.45 ? 1.0 : 0.7;
+    
     const completenessScore = positions.length / 68;
     
-    return Math.max(0.3, Math.min(1.0, (symmetryScore + completenessScore) / 2));
+    const totalScore = (horizontalSymmetry * 0.3 + tiltScore * 0.3 + proportionScore * 0.2 + completenessScore * 0.2);
+    
+    return Math.max(0.2, Math.min(1.0, totalScore));
   };
 
   const calculateMedianAge = (detections) => {
@@ -125,14 +147,16 @@ function FaceDetection({ onDetection }) {
   };
 
   const calculateExponentialWeightedAge = (detections) => {
-    const alpha = 0.3;
+    const alpha = 0.25;
     let totalWeight = 0;
     let weightedSum = 0;
     
     for (let i = 0; i < detections.length; i++) {
       const recencyWeight = Math.pow(1 + alpha, i);
-      const quality = detections[i].detectionScore * detections[i].confidence * 
-                     (detections[i].faceSize / 200) * (detections[i].landmarkQuality || 0.5);
+      const quality = Math.pow(detections[i].detectionScore, 1.5) * 
+                     Math.pow(detections[i].confidence, 1.2) * 
+                     Math.min(1.0, detections[i].faceSize / 250) * 
+                     Math.pow(detections[i].landmarkQuality || 0.5, 1.3);
       const weight = recencyWeight * quality;
       weightedSum += detections[i].age * weight;
       totalWeight += weight;
@@ -143,19 +167,29 @@ function FaceDetection({ onDetection }) {
 
   const calculateTrimmedMean = (detections) => {
     const ages = detections.map(d => d.age).sort((a, b) => a - b);
-    const trimAmount = Math.floor(ages.length * 0.15);
+    const trimAmount = Math.floor(ages.length * 0.2);
     const trimmedAges = ages.slice(trimAmount, ages.length - trimAmount);
     return trimmedAges.reduce((a, b) => a + b, 0) / trimmedAges.length;
   };
 
   const calculateHybridAge = (detections) => {
-    if (detections.length < 10) {
+    if (detections.length < 15) {
       return calculateExponentialWeightedAge(detections);
     }
     
     const medianAge = calculateMedianAge(detections);
     const trimmedMeanAge = calculateTrimmedMean(detections);
     const weightedAge = calculateExponentialWeightedAge(detections);
+    
+    const highQualityDetections = detections.filter(d => 
+      d.landmarkQuality > 0.7 && d.detectionScore > 0.9 && d.faceSize > 220
+    );
+    
+    if (highQualityDetections.length >= 10) {
+      const eliteAge = highQualityDetections.slice(-20).reduce((sum, d) => sum + d.age, 0) / 
+                      Math.min(20, highQualityDetections.length);
+      return medianAge * 0.25 + trimmedMeanAge * 0.2 + weightedAge * 0.35 + eliteAge * 0.2;
+    }
     
     return medianAge * 0.3 + trimmedMeanAge * 0.25 + weightedAge * 0.45;
   };
@@ -195,6 +229,7 @@ function FaceDetection({ onDetection }) {
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
       .withFaceLandmarks()
+      .withFaceDescriptor()
       .withAgeAndGender();
 
     const ctx = canvas.getContext('2d');
@@ -204,7 +239,7 @@ function FaceDetection({ onDetection }) {
       const resizedDetections = faceapi.resizeResults(detections, displaySize);
       
       resizedDetections.forEach(detection => {
-        const { age, gender, genderProbability } = detection;
+        const { age, gender, genderProbability, descriptor } = detection;
         const box = detection.detection.box;
         const faceSize = Math.min(box.width, box.height);
         const detectionScore = detection.detection.score;
@@ -212,7 +247,7 @@ function FaceDetection({ onDetection }) {
         const landmarkQuality = calculateLandmarkQuality(detection.landmarks);
         
         if (faceSize >= MIN_FACE_SIZE && detectionScore >= MIN_DETECTION_SCORE && 
-            age >= MIN_AGE && age <= MAX_AGE && landmarkQuality > 0.4) {
+            age >= MIN_AGE && age <= MAX_AGE && landmarkQuality >= MIN_LANDMARK_QUALITY) {
           detectionBufferRef.current.push({
             age: age,
             gender: gender,
@@ -220,6 +255,7 @@ function FaceDetection({ onDetection }) {
             detectionScore: detectionScore,
             faceSize: faceSize,
             landmarkQuality: landmarkQuality,
+            descriptor: descriptor ? Array.from(descriptor) : null,
             timestamp: Date.now()
           });
           
@@ -268,21 +304,31 @@ function FaceDetection({ onDetection }) {
             box.y > 10 ? box.y - 10 : 10
           );
           
+          const descriptorsAvailable = filteredDetections.filter(d => d.descriptor && d.descriptor.length > 0);
+          const latestDescriptor = descriptorsAvailable.length > 0 
+            ? descriptorsAvailable[descriptorsAvailable.length - 1].descriptor 
+            : null;
+          
           setCurrentDetection({
             age: finalAge,
             gender: dominantGender,
             confidence: avgConfidence,
-            landmarkQuality: avgLandmarkQuality
+            landmarkQuality: avgLandmarkQuality,
+            descriptor: latestDescriptor
           });
           
             if (onDetection) {
-              onDetection(finalAge, dominantGender, avgConfidence);
+              if (latestDescriptor) {
+                onDetection(finalAge, dominantGender, avgConfidence, latestDescriptor);
+              } else {
+                console.warn('No face descriptor available - detection may not work for deduplication');
+              }
             }
           }
         } else {
           ctx.fillStyle = '#FFD700';
           ctx.font = '18px Arial';
-          const statusText = detectionBufferRef.current.length >= 5 ? 'Analyzing...' : 'Calibrating...';
+          const statusText = detectionBufferRef.current.length >= 8 ? 'Analyzing...' : 'Calibrating...';
           ctx.fillText(
             statusText,
             box.x,
@@ -309,17 +355,22 @@ function FaceDetection({ onDetection }) {
     } else {
       detectionBufferRef.current = [];
       previousAgeRef.current = null;
-      detectionIntervalRef.current = setInterval(detectFaces, 200);
+      detectionIntervalRef.current = setInterval(detectFaces, 150);
       setIsDetecting(true);
     }
   };
 
   const getQualityStatus = () => {
     const bufferLength = detectionBufferRef.current.length;
-    if (bufferLength >= 40) return { text: '🏆 ULTIMATE PRECISION', color: '#FFD700', fontWeight: 'bold' };
-    if (bufferLength >= 30) return { text: '🎯 MAXIMUM PRECISION', color: '#00FF00' };
-    if (bufferLength >= 20) return { text: 'Excellent', color: '#32CD32' };
-    if (bufferLength >= 12) return { text: 'Very Good', color: '#7FFF00' };
+    const recentHighQuality = detectionBufferRef.current.slice(-20).filter(d => 
+      d.landmarkQuality > 0.8 && d.detectionScore > 0.92
+    ).length;
+    
+    if (bufferLength >= 60 && recentHighQuality >= 15) return { text: '💎 DIAMOND PRECISION', color: '#00FFFF', fontWeight: 'bold' };
+    if (bufferLength >= 50) return { text: '🏆 ULTIMATE PRECISION', color: '#FFD700', fontWeight: 'bold' };
+    if (bufferLength >= 35) return { text: '🎯 MAXIMUM PRECISION', color: '#00FF00' };
+    if (bufferLength >= 25) return { text: '⭐ Excellent', color: '#32CD32' };
+    if (bufferLength >= 15) return { text: '✓ Very Good', color: '#7FFF00' };
     return { text: 'Calibrating...', color: '#FF6B6B' };
   };
 
@@ -332,13 +383,14 @@ function FaceDetection({ onDetection }) {
       
       {!isLoading && !error && (
         <div className="accuracy-tips">
-          <strong>🏆 ULTIMATE PRECISION Guide:</strong>
+          <strong>💎 MAXIMUM ACCURACY Guide:</strong>
           <ul>
-            <li><strong>CRITICAL: Fill the frame</strong> - Face must be 75-85% of screen (VERY CLOSE!)</li>
-            <li><strong>Perfect lighting required</strong> - Bright, even, front-facing (zero shadows)</li>
-            <li><strong>Absolute stillness</strong> - Hold completely still for 10-15 seconds</li>
-            <li><strong>Direct gaze</strong> - Eyes locked on camera center</li>
-            <li><strong>Wait for 🏆 ULTIMATE</strong> - Maximum accuracy at 40-50 samples</li>
+            <li><strong>🎯 Face Size CRITICAL:</strong> Fill 80-90% of frame - Move VERY close to camera!</li>
+            <li><strong>💡 Perfect Lighting:</strong> Bright, even, front-facing light (NO shadows on face)</li>
+            <li><strong>🎭 Perfect Position:</strong> Face camera directly, eyes level, neutral expression</li>
+            <li><strong>⏱️ Stay Still:</strong> Hold completely motionless for 15-20 seconds</li>
+            <li><strong>🏆 Quality Target:</strong> Wait for "💎 DIAMOND" or "🏆 ULTIMATE" (50-70 samples)</li>
+            <li><strong>📐 Head Angle:</strong> No tilting - keep head perfectly level and straight</li>
           </ul>
         </div>
       )}
@@ -359,12 +411,12 @@ function FaceDetection({ onDetection }) {
           <span style={{ 
             color: getQualityStatus().color, 
             fontWeight: getQualityStatus().fontWeight || 'bold',
-            fontSize: detectionBufferRef.current.length >= 40 ? '18px' : '16px'
+            fontSize: detectionBufferRef.current.length >= 50 ? '18px' : '16px'
           }}>
             {getQualityStatus().text}
           </span>
           <span style={{ marginLeft: '10px', fontSize: '12px', color: '#666' }}>
-            ({detectionBufferRef.current.length}/50 samples)
+            ({detectionBufferRef.current.length}/{BUFFER_SIZE} samples)
           </span>
         </div>
       )}

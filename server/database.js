@@ -18,6 +18,7 @@ db.exec(`
     age INTEGER,
     gender TEXT,
     confidence REAL,
+    face_descriptor TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);

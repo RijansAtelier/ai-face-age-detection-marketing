@@ -9,6 +9,7 @@ const API_URL = '';
 function Dashboard({ username, onLogout, token }) {
   const [stats, setStats] = useState({ total: 0, male: 0, female: 0, averageAge: 0 });
   const [detections, setDetections] = useState([]);
+  const [detectionMessage, setDetectionMessage] = useState(null);
 
   const fetchStats = async () => {
     try {
@@ -42,20 +43,43 @@ function Dashboard({ username, onLogout, token }) {
     }
   };
 
-  const handleDetection = async (age, gender, confidence) => {
+  const handleDetection = async (age, gender, confidence, faceDescriptor) => {
     try {
-      await fetch(`${API_URL}/api/detections`, {
+      const response = await fetch(`${API_URL}/api/detections`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ age, gender, confidence })
+        body: JSON.stringify({ age, gender, confidence, faceDescriptor })
       });
-      fetchStats();
-      fetchDetections();
+      
+      const result = await response.json();
+      
+      if (result.duplicate) {
+        const lastDetectedDate = new Date(result.lastDetected);
+        const timeAgo = Math.floor((Date.now() - lastDetectedDate.getTime()) / 60000);
+        setDetectionMessage({
+          type: 'duplicate',
+          text: `⚠️ Already counted! This person was detected ${timeAgo} minute(s) ago.`
+        });
+        setTimeout(() => setDetectionMessage(null), 5000);
+      } else {
+        setDetectionMessage({
+          type: 'success',
+          text: '✅ New person detected and saved!'
+        });
+        setTimeout(() => setDetectionMessage(null), 3000);
+        fetchStats();
+        fetchDetections();
+      }
     } catch (err) {
       console.error('Failed to save detection:', err);
+      setDetectionMessage({
+        type: 'error',
+        text: '❌ Error saving detection'
+      });
+      setTimeout(() => setDetectionMessage(null), 3000);
     }
   };
 
@@ -143,6 +167,11 @@ function Dashboard({ username, onLogout, token }) {
 
         <div className="main-panel">
           <div className="camera-section">
+            {detectionMessage && (
+              <div className={`detection-message ${detectionMessage.type}`}>
+                {detectionMessage.text}
+              </div>
+            )}
             <FaceDetection onDetection={handleDetection} />
           </div>
 
