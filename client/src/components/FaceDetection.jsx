@@ -12,15 +12,20 @@ function FaceDetection({ onDetection }) {
   const detectionIntervalRef = useRef(null);
   const detectionBufferRef = useRef([]);
   const previousAgeRef = useRef(null);
-  const BUFFER_SIZE = 80;
-  const MIN_FACE_SIZE = 160;
-  const MIN_DETECTION_SCORE = 0.7;
-  const MIN_AGE = 5;
-  const MAX_AGE = 100;
+  const lastSavedDescriptorRef = useRef(null);
+  const lastDetectionTimeRef = useRef(0);
+  const BUFFER_SIZE = 50;
+  const MIN_FACE_SIZE = 80;
+  const MIN_DETECTION_SCORE = 0.5;
+  const MIN_AGE = 1;
+  const MAX_AGE = 120;
   const TEMPORAL_SMOOTHING_FACTOR = 0.85;
-  const MAX_AGE_JUMP = 2;
+  const MAX_AGE_JUMP = 3;
   const OUTLIER_THRESHOLD = 1.0;
-  const MIN_LANDMARK_QUALITY = 0.5;
+  const MIN_LANDMARK_QUALITY = 0.3;
+  const SAMPLES_FOR_SAVE = 15;
+  const NEW_PERSON_THRESHOLD = 0.6;
+  const DETECTION_COOLDOWN = 3000;
 
   useEffect(() => {
     const loadModels = async () => {
@@ -33,7 +38,10 @@ function FaceDetection({ onDetection }) {
           faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL),
         ]);
         setIsLoading(false);
-        startVideo();
+        await startVideo();
+        setTimeout(() => {
+          startDetectionAutomatically();
+        }, 1000);
       } catch (err) {
         setError('Failed to load AI models. Please refresh the page.');
         setIsLoading(false);
@@ -49,6 +57,15 @@ function FaceDetection({ onDetection }) {
       }
     };
   }, []);
+
+  const startDetectionAutomatically = () => {
+    if (!isDetecting && !detectionIntervalRef.current) {
+      detectionBufferRef.current = [];
+      previousAgeRef.current = null;
+      detectionIntervalRef.current = setInterval(detectFaces, 150);
+      setIsDetecting(true);
+    }
+  };
 
   const startVideo = async () => {
     try {
@@ -229,7 +246,7 @@ function FaceDetection({ onDetection }) {
     const detections = await faceapi
       .detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
       .withFaceLandmarks()
-      .withFaceDescriptor()
+      .withFaceDescriptors()
       .withAgeAndGender();
 
     const ctx = canvas.getContext('2d');
@@ -269,12 +286,12 @@ function FaceDetection({ onDetection }) {
         ctx.lineWidth = 3;
         ctx.strokeRect(box.x, box.y, box.width, box.height);
         
-        if (detectionBufferRef.current.length >= 12) {
+        if (detectionBufferRef.current.length >= 5) {
           const recentDetections = detectionBufferRef.current.slice(-BUFFER_SIZE);
           
           const filteredDetections = removeOutliers(recentDetections);
           
-          if (filteredDetections.length >= 8) {
+          if (filteredDetections.length >= 3) {
             const hybridAge = calculateHybridAge(filteredDetections);
             const temporallySmoothedAge = applyTemporalSmoothing(hybridAge);
             
@@ -317,18 +334,32 @@ function FaceDetection({ onDetection }) {
             descriptor: latestDescriptor
           });
           
-            if (onDetection) {
-              if (latestDescriptor) {
+            const now = Date.now();
+            const timeSinceLastDetection = now - lastDetectionTimeRef.current;
+            
+            if (onDetection && detectionBufferRef.current.length >= SAMPLES_FOR_SAVE && latestDescriptor) {
+              let isNewPerson = true;
+              
+              if (lastSavedDescriptorRef.current && timeSinceLastDetection < DETECTION_COOLDOWN) {
+                const distance = euclideanDistance(latestDescriptor, lastSavedDescriptorRef.current);
+                if (distance < NEW_PERSON_THRESHOLD) {
+                  isNewPerson = false;
+                }
+              }
+              
+              if (isNewPerson && timeSinceLastDetection >= DETECTION_COOLDOWN) {
+                lastSavedDescriptorRef.current = latestDescriptor;
+                lastDetectionTimeRef.current = now;
+                detectionBufferRef.current = [];
+                previousAgeRef.current = null;
                 onDetection(finalAge, dominantGender, avgConfidence, latestDescriptor);
-              } else {
-                console.warn('No face descriptor available - detection may not work for deduplication');
               }
             }
           }
         } else {
           ctx.fillStyle = '#FFD700';
           ctx.font = '18px Arial';
-          const statusText = detectionBufferRef.current.length >= 8 ? 'Analyzing...' : 'Calibrating...';
+          const statusText = detectionBufferRef.current.length >= 3 ? 'Analyzing...' : 'Calibrating...';
           ctx.fillText(
             statusText,
             box.x,
@@ -351,10 +382,14 @@ function FaceDetection({ onDetection }) {
       }
       detectionBufferRef.current = [];
       previousAgeRef.current = null;
+      lastSavedDescriptorRef.current = null;
+      lastDetectionTimeRef.current = 0;
       setIsDetecting(false);
     } else {
       detectionBufferRef.current = [];
       previousAgeRef.current = null;
+      lastSavedDescriptorRef.current = null;
+      lastDetectionTimeRef.current = 0;
       detectionIntervalRef.current = setInterval(detectFaces, 150);
       setIsDetecting(true);
     }
@@ -383,14 +418,13 @@ function FaceDetection({ onDetection }) {
       
       {!isLoading && !error && (
         <div className="accuracy-tips">
-          <strong>💎 MAXIMUM ACCURACY Guide:</strong>
+          <strong>🚪 Entrance Detection System - Active</strong>
           <ul>
-            <li><strong>🎯 Face Size CRITICAL:</strong> Fill 80-90% of frame - Move VERY close to camera!</li>
-            <li><strong>💡 Perfect Lighting:</strong> Bright, even, front-facing light (NO shadows on face)</li>
-            <li><strong>🎭 Perfect Position:</strong> Face camera directly, eyes level, neutral expression</li>
-            <li><strong>⏱️ Stay Still:</strong> Hold completely motionless for 15-20 seconds</li>
-            <li><strong>🏆 Quality Target:</strong> Wait for "💎 DIAMOND" or "🏆 ULTIMATE" (50-70 samples)</li>
-            <li><strong>📐 Head Angle:</strong> No tilting - keep head perfectly level and straight</li>
+            <li><strong>✅ Auto-Detection:</strong> System automatically detects customers as they enter</li>
+            <li><strong>⚡ Fast Processing:</strong> Detection takes 2-3 seconds per person</li>
+            <li><strong>🚫 No Duplicates:</strong> Same person won't be counted twice within 1 hour</li>
+            <li><strong>📊 Marketing Data:</strong> Age and gender data saved for analytics</li>
+            <li><strong>💡 Best Results:</strong> Ensure good lighting at entrance</li>
           </ul>
         </div>
       )}
@@ -443,8 +477,14 @@ function FaceDetection({ onDetection }) {
         className={`detection-btn ${isDetecting ? 'active' : ''}`}
         disabled={isLoading || !!error}
       >
-        {isDetecting ? 'Stop Detection' : 'Start Detection'}
+        {isDetecting ? '🔴 Stop System' : '🟢 Start System'}
       </button>
+      
+      {isDetecting && (
+        <div style={{ marginTop: '15px', padding: '10px', backgroundColor: '#4CAF50', color: 'white', borderRadius: '5px', textAlign: 'center' }}>
+          <strong>✅ SYSTEM ACTIVE</strong> - Monitoring entrance for customers
+        </div>
+      )}
     </div>
   );
 }

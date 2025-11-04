@@ -84,31 +84,51 @@ function Dashboard({ username, onLogout, token }) {
   };
 
   const exportToPDF = () => {
-    const doc = new jsPDF();
-    
-    doc.setFontSize(20);
-    doc.text('Face Detection Analytics Report', 14, 20);
-    
-    doc.setFontSize(12);
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
-    doc.text(`Total Detections: ${stats.total}`, 14, 40);
-    doc.text(`Male: ${stats.male} | Female: ${stats.female}`, 14, 47);
-    doc.text(`Average Age: ${stats.averageAge} years`, 14, 54);
-    
-    const tableData = detections.slice(0, 100).map(d => [
-      new Date(d.timestamp).toLocaleString(),
-      d.gender,
-      d.age,
-      `${(d.confidence * 100).toFixed(1)}%`
-    ]);
-    
-    doc.autoTable({
-      startY: 65,
-      head: [['Timestamp', 'Gender', 'Age', 'Confidence']],
-      body: tableData,
-    });
-    
-    doc.save('face-detection-report.pdf');
+    try {
+      const doc = new jsPDF();
+      
+      doc.setFontSize(20);
+      doc.text('Face Detection Analytics Report', 14, 20);
+      
+      doc.setFontSize(12);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+      doc.text(`Total Detections: ${stats.total || 0}`, 14, 40);
+      doc.text(`Male: ${stats.male || 0} | Female: ${stats.female || 0}`, 14, 47);
+      doc.text(`Average Age: ${stats.averageAge || 0} years`, 14, 54);
+      
+      if (detections && detections.length > 0) {
+        const tableData = detections.slice(0, 100).map(d => [
+          new Date(d.timestamp).toLocaleString(),
+          d.gender || 'N/A',
+          d.age || 'N/A',
+          d.confidence ? `${(d.confidence * 100).toFixed(1)}%` : 'N/A'
+        ]);
+        
+        doc.autoTable({
+          startY: 65,
+          head: [['Timestamp', 'Gender', 'Age', 'Confidence']],
+          body: tableData,
+        });
+      } else {
+        doc.setFontSize(10);
+        doc.text('No detection data available yet.', 14, 70);
+      }
+      
+      doc.save(`face-detection-report-${new Date().toISOString().split('T')[0]}.pdf`);
+      
+      setDetectionMessage({
+        type: 'success',
+        text: '✅ PDF report generated successfully!'
+      });
+      setTimeout(() => setDetectionMessage(null), 3000);
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      setDetectionMessage({
+        type: 'error',
+        text: '❌ Failed to generate PDF report'
+      });
+      setTimeout(() => setDetectionMessage(null), 3000);
+    }
   };
 
   const clearData = async () => {
