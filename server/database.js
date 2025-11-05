@@ -28,7 +28,7 @@ if (!defaultUser) {
   const bcrypt = await import('bcryptjs');
   const hashedPassword = bcrypt.hashSync('admin123', 10);
   db.prepare('INSERT INTO users (username, password) VALUES (?, ?)').run('admin', hashedPassword);
-  console.log('Default admin user created (username: admin, password: admin123)');
+  console.log('Default admin user created');
 }
 
 export default db;

@@ -15,17 +15,20 @@ function FaceDetection({ onDetection }) {
   const lockedGenderRef = useRef(null);
   const lastSavedDescriptorRef = useRef(null);
   const lastDetectionTimeRef = useRef(0);
+  const lastFaceSeenTimeRef = useRef(0);
   const isDetectingRef = useRef(false);
-  const BUFFER_SIZE = 12;
-  const MIN_FACE_SIZE = 80;
-  const MIN_DETECTION_SCORE = 0.45;
+  const BUFFER_SIZE = 30;
+  const MIN_FACE_SIZE = 100;
+  const MIN_DETECTION_SCORE = 0.55;
   const MIN_AGE = 1;
   const MAX_AGE = 120;
-  const OUTLIER_THRESHOLD = 2.0;
-  const MIN_LANDMARK_QUALITY = 0.3;
-  const SAMPLES_FOR_SAVE = 5;
+  const OUTLIER_THRESHOLD = 1.5;
+  const MIN_LANDMARK_QUALITY = 0.45;
+  const SAMPLES_FOR_SAVE = 15;
   const NEW_PERSON_THRESHOLD = 0.6;
-  const DETECTION_COOLDOWN = 1500;
+  const DETECTION_COOLDOWN = 3000;
+  const NO_FACE_RESET_TIME = 5000;
+  const MIN_FACE_ANGLE_THRESHOLD = 30;
 
   useEffect(() => {
     const loadModels = async () => {
@@ -63,6 +66,7 @@ function FaceDetection({ onDetection }) {
       detectionBufferRef.current = [];
       lockedAgeRef.current = null;
       lockedGenderRef.current = null;
+      lastFaceSeenTimeRef.current = 0;
       detectionIntervalRef.current = setInterval(detectFaces, 80);
       setIsDetecting(true);
     }
@@ -121,6 +125,29 @@ function FaceDetection({ onDetection }) {
     const robustFiltered = filtered.filter(d => Math.abs(d.age - trimmedMean) <= Math.max(threshold, 3));
     
     return robustFiltered.length >= 5 ? robustFiltered : filtered;
+  };
+
+  const calculateFaceAngle = (landmarks) => {
+    if (!landmarks || !landmarks.positions) return 90;
+    const positions = landmarks.positions;
+    if (positions.length < 68) return 90;
+    
+    const nose = positions.slice(27, 36);
+    const eyes = positions.slice(36, 48);
+    const leftEyeCenter = { x: (eyes[0].x + eyes[3].x) / 2, y: (eyes[0].y + eyes[3].y) / 2 };
+    const rightEyeCenter = { x: (eyes[6].x + eyes[9].x) / 2, y: (eyes[6].y + eyes[9].y) / 2 };
+    const noseTip = nose[4];
+    
+    const eyeMidpoint = { x: (leftEyeCenter.x + rightEyeCenter.x) / 2, y: (leftEyeCenter.y + rightEyeCenter.y) / 2 };
+    const horizontalOffset = Math.abs(noseTip.x - eyeMidpoint.x);
+    const eyeDistance = Math.sqrt(Math.pow(rightEyeCenter.x - leftEyeCenter.x, 2) + Math.pow(rightEyeCenter.y - leftEyeCenter.y, 2));
+    
+    const yawAngle = Math.abs(Math.atan2(horizontalOffset, eyeDistance) * (180 / Math.PI));
+    
+    const eyeYDiff = Math.abs(leftEyeCenter.y - rightEyeCenter.y);
+    const pitchAngle = Math.abs(Math.atan2(eyeYDiff, eyeDistance) * (180 / Math.PI));
+    
+    return Math.max(yawAngle, pitchAngle);
   };
 
   const calculateLandmarkQuality = (landmarks) => {
@@ -195,11 +222,44 @@ function FaceDetection({ onDetection }) {
       return detections.reduce((sum, d) => sum + d.age, 0) / detections.length;
     }
     
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    for (let i = 0; i < detections.length; i++) {
+      const recencyFactor = (i + 1) / detections.length;
+      const qualityScore = (
+        Math.pow(detections[i].detectionScore, 2) * 
+        Math.pow(detections[i].confidence, 1.5) * 
+        Math.pow(detections[i].landmarkQuality || 0.5, 2) *
+        (1 - (detections[i].faceAngle || 0) / 90) *
+        Math.min(1.0, detections[i].faceSize / 200)
+      );
+      const weight = recencyFactor * qualityScore * 10;
+      weightedSum += detections[i].age * weight;
+      totalWeight += weight;
+    }
+    
+    const weightedAge = weightedSum / totalWeight;
+    
     const ages = detections.map(d => d.age).sort((a, b) => a - b);
     const mid = Math.floor(ages.length / 2);
     const medianAge = ages.length % 2 === 0 ? (ages[mid - 1] + ages[mid]) / 2 : ages[mid];
     
-    return medianAge;
+    return (weightedAge * 0.7 + medianAge * 0.3);
+  };
+
+  const euclideanDistance = (descriptor1, descriptor2) => {
+    if (!descriptor1 || !descriptor2 || descriptor1.length !== descriptor2.length) {
+      return 999;
+    }
+    
+    let sum = 0;
+    for (let i = 0; i < descriptor1.length; i++) {
+      const diff = descriptor1[i] - descriptor2[i];
+      sum += diff * diff;
+    }
+    
+    return Math.sqrt(sum);
   };
 
   const detectFaces = async () => {
@@ -221,8 +281,8 @@ function FaceDetection({ onDetection }) {
 
       const detections = await faceapi
         .detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({ 
-          inputSize: 320,
-          scoreThreshold: 0.4
+          inputSize: 416,
+          scoreThreshold: 0.5
         }))
         .withFaceLandmarks()
         .withFaceDescriptors()
@@ -241,9 +301,11 @@ function FaceDetection({ onDetection }) {
         const detectionScore = detection.detection.score;
         
         const landmarkQuality = calculateLandmarkQuality(detection.landmarks);
+        const faceAngle = calculateFaceAngle(detection.landmarks);
         
         if (faceSize >= MIN_FACE_SIZE && detectionScore >= MIN_DETECTION_SCORE && 
-            age >= MIN_AGE && age <= MAX_AGE && landmarkQuality >= MIN_LANDMARK_QUALITY) {
+            age >= MIN_AGE && age <= MAX_AGE && landmarkQuality >= MIN_LANDMARK_QUALITY &&
+            faceAngle <= MIN_FACE_ANGLE_THRESHOLD) {
           detectionBufferRef.current.push({
             age: age,
             gender: gender,
@@ -251,6 +313,7 @@ function FaceDetection({ onDetection }) {
             detectionScore: detectionScore,
             faceSize: faceSize,
             landmarkQuality: landmarkQuality,
+            faceAngle: faceAngle,
             descriptor: descriptor ? Array.from(descriptor) : null,
             timestamp: Date.now()
           });
@@ -324,6 +387,7 @@ function FaceDetection({ onDetection }) {
           });
           
             const now = Date.now();
+            lastFaceSeenTimeRef.current = now;
             const timeSinceLastDetection = now - lastDetectionTimeRef.current;
             
             if (onDetection && detectionBufferRef.current.length >= SAMPLES_FOR_SAVE && latestDescriptor) {
@@ -339,9 +403,6 @@ function FaceDetection({ onDetection }) {
               if (isNewPerson && timeSinceLastDetection >= DETECTION_COOLDOWN) {
                 lastSavedDescriptorRef.current = latestDescriptor;
                 lastDetectionTimeRef.current = now;
-                detectionBufferRef.current = [];
-                lockedAgeRef.current = null;
-                lockedGenderRef.current = null;
                 onDetection(finalAge, dominantGender, avgConfidence, latestDescriptor);
               }
             }
@@ -360,10 +421,13 @@ function FaceDetection({ onDetection }) {
       } else {
         setCurrentDetection(null);
         const now = Date.now();
-        detectionBufferRef.current = detectionBufferRef.current.filter(d => now - d.timestamp < 1000);
-        if (detectionBufferRef.current.length === 0) {
+        const timeSinceLastFaceSeen = now - lastFaceSeenTimeRef.current;
+        
+        if (timeSinceLastFaceSeen > NO_FACE_RESET_TIME) {
+          detectionBufferRef.current = [];
           lockedAgeRef.current = null;
           lockedGenderRef.current = null;
+          lastSavedDescriptorRef.current = null;
         }
       }
     } catch (error) {
@@ -384,6 +448,7 @@ function FaceDetection({ onDetection }) {
       lockedGenderRef.current = null;
       lastSavedDescriptorRef.current = null;
       lastDetectionTimeRef.current = 0;
+      lastFaceSeenTimeRef.current = 0;
       setIsDetecting(false);
     } else {
       detectionBufferRef.current = [];
@@ -391,6 +456,7 @@ function FaceDetection({ onDetection }) {
       lockedGenderRef.current = null;
       lastSavedDescriptorRef.current = null;
       lastDetectionTimeRef.current = 0;
+      lastFaceSeenTimeRef.current = 0;
       detectionIntervalRef.current = setInterval(detectFaces, 80);
       setIsDetecting(true);
     }
@@ -399,11 +465,13 @@ function FaceDetection({ onDetection }) {
   const getQualityStatus = () => {
     const bufferLength = detectionBufferRef.current.length;
     const isLocked = lockedAgeRef.current !== null;
+    const progress = (bufferLength / SAMPLES_FOR_SAVE) * 100;
     
-    if (isLocked) return { text: '🔒 Age Locked - Ready', color: '#00FF00', fontWeight: 'bold' };
-    if (bufferLength >= 5) return { text: '✅ Ready to Lock', color: '#32CD32', fontWeight: 'bold' };
-    if (bufferLength >= 3) return { text: '⚡ Processing...', color: '#FFD700' };
-    return { text: '🔍 Detecting...', color: '#FFA500' };
+    if (isLocked) return { text: '🔒 Age Locked - Optimized Accuracy', color: '#00FF00', fontWeight: 'bold' };
+    if (bufferLength >= SAMPLES_FOR_SAVE) return { text: '✅ Ready to Lock - Best Quality Achieved', color: '#32CD32', fontWeight: 'bold' };
+    if (bufferLength >= SAMPLES_FOR_SAVE * 0.5) return { text: `⚡ Collecting Quality Samples (${Math.round(progress)}%)`, color: '#FFD700' };
+    if (bufferLength >= 3) return { text: '📊 Analyzing Face Quality...', color: '#FFA500' };
+    return { text: '🎯 Looking for Frontal Face...', color: '#FFA500' };
   };
 
   return (
@@ -415,13 +483,14 @@ function FaceDetection({ onDetection }) {
       
       {!isLoading && !error && (
         <div className="accuracy-tips">
-          <strong>🚪 Entrance Detection System - Active</strong>
+          <strong>🚪 Entrance Detection System - Optimized Mode</strong>
           <ul>
-            <li><strong>✅ Auto-Detection:</strong> Captures customers as they walk through gate</li>
-            <li><strong>⚡ Ultra-Fast:</strong> Detection in under 0.5 seconds - perfect for moving customers</li>
-            <li><strong>🔒 Age Lock:</strong> Age is locked once detected - expressions won't change it</li>
+            <li><strong>🎯 Best Free Accuracy:</strong> Optimized for maximum accuracy with free AI models</li>
+            <li><strong>📊 Smart Quality Filtering:</strong> Only accepts frontal faces with good lighting</li>
+            <li><strong>⚡ Multi-Sample Analysis:</strong> Collects 15+ samples with advanced averaging</li>
+            <li><strong>🔒 Age Lock:</strong> Age locked once detected - expressions won't change it</li>
             <li><strong>🚫 No Duplicates:</strong> Same person won't be counted twice within 1 hour</li>
-            <li><strong>📊 Marketing Data:</strong> Accurate age and gender data for analytics</li>
+            <li><strong>💡 Tip:</strong> Customer should pause ~1-2 seconds at entrance for best results</li>
           </ul>
         </div>
       )}
