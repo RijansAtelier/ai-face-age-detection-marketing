@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import * as faceapi from 'face-api.js';
 import './FaceDetection.css';
 
-function FaceDetection({ onDetection }) {
+function FaceDetection({ onDetection, isKioskMode = false }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,17 +18,32 @@ function FaceDetection({ onDetection }) {
   const lastFaceSeenTimeRef = useRef(0);
   const isDetectingRef = useRef(false);
   const BUFFER_SIZE = 30;
-  const MIN_FACE_SIZE = 100;
-  const MIN_DETECTION_SCORE = 0.55;
+  const MIN_FACE_SIZE = isKioskMode ? 80 : 100;
+  const MIN_DETECTION_SCORE = isKioskMode ? 0.5 : 0.55;
   const MIN_AGE = 1;
   const MAX_AGE = 120;
   const OUTLIER_THRESHOLD = 1.5;
-  const MIN_LANDMARK_QUALITY = 0.45;
-  const SAMPLES_FOR_SAVE = 15;
+  const MIN_LANDMARK_QUALITY = isKioskMode ? 0.35 : 0.45;
+  const SAMPLES_FOR_SAVE = isKioskMode ? 5 : 15;
   const NEW_PERSON_THRESHOLD = 0.6;
-  const DETECTION_COOLDOWN = 3000;
-  const NO_FACE_RESET_TIME = 5000;
-  const MIN_FACE_ANGLE_THRESHOLD = 30;
+  const DETECTION_COOLDOWN = isKioskMode ? 2000 : 3000;
+  const NO_FACE_RESET_TIME = isKioskMode ? 3000 : 5000;
+  const MIN_FACE_ANGLE_THRESHOLD = isKioskMode ? 45 : 30;
+
+  const getAgeRange = (age) => {
+    if (age < 18) return '0-17';
+    if (age <= 22) return '18-22';
+    if (age <= 27) return '23-27';
+    if (age <= 32) return '28-32';
+    if (age <= 37) return '33-37';
+    if (age <= 42) return '38-42';
+    if (age <= 47) return '43-47';
+    if (age <= 52) return '48-52';
+    if (age <= 57) return '53-57';
+    if (age <= 62) return '58-62';
+    if (age <= 67) return '63-67';
+    return '68+';
+  };
 
   useEffect(() => {
     const loadModels = async () => {
@@ -528,8 +543,8 @@ function FaceDetection({ onDetection }) {
             <span className="value">{currentDetection.gender}</span>
           </div>
           <div className="info-item">
-            <span className="label">Age:</span>
-            <span className="value">{currentDetection.age} years</span>
+            <span className="label">Age Range:</span>
+            <span className="value">{getAgeRange(currentDetection.age)}</span>
           </div>
           <div className="info-item">
             <span className="label">Confidence:</span>

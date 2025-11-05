@@ -75,6 +75,153 @@
   color: #667eea;
   font-size: 36px;
   font-weight: bold;
+  margin: 0;
+}
+
+.stat-label {
+  color: #999;
+  font-size: 12px;
+  margin-top: 5px;
+  display: block;
+}
+
+.stat-card.demographics {
+  grid-column: span 2;
+  text-align: left;
+}
+
+.demographics-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.range-mode-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-btn {
+  padding: 6px 12px;
+  border: 2px solid #667eea;
+  background: white;
+  color: #667eea;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.mode-btn:hover {
+  background: #f0f0ff;
+}
+
+.mode-btn.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-color: #667eea;
+}
+
+.gender-split {
+  margin-top: 15px;
+}
+
+.gender-bar {
+  display: flex;
+  height: 40px;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.gender-bar-male {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  transition: width 0.3s ease;
+}
+
+.gender-bar-female {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  transition: width 0.3s ease;
+}
+
+.gender-percentages {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.male-pct {
+  color: #667eea;
+  font-weight: bold;
+}
+
+.female-pct {
+  color: #f5576c;
+  font-weight: bold;
+}
+
+.age-demographics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 15px;
+}
+
+.age-range {
+  display: grid;
+  grid-template-columns: 60px 1fr 40px;
+  align-items: center;
+  gap: 10px;
+}
+
+.age-label {
+  font-weight: 600;
+  color: #666;
+  font-size: 13px;
+}
+
+.age-bar-container {
+  background: #e0e0e0;
+  height: 20px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.age-bar-fill {
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+}
+
+.age-bar-text {
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  padding: 0 5px;
+}
+
+.age-count {
+  text-align: right;
+  font-weight: bold;
+  color: #667eea;
+  font-size: 14px;
 }
 
 .main-panel {
