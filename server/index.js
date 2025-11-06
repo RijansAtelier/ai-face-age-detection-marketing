@@ -3,14 +3,23 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import db from './database.js';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const PORT = process.env.PORT || (IS_PRODUCTION ? 5000 : 3001);
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const KIOSK_API_KEY = process.env.KIOSK_API_KEY || 'default-kiosk-key';
+const KIOSK_API_KEY = process.env.KIOSK_API_KEY || process.env.VITE_KIOSK_API_KEY || 'default-kiosk-key';
 
 app.use(cors());
 app.use(express.json());
+
+if (IS_PRODUCTION) {
+  app.use(express.static(join(__dirname, '../client/dist')));
+}
 
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers['authorization'];
@@ -23,6 +32,16 @@ const authenticateToken = (req, res, next) => {
     req.user = user;
     next();
   });
+};
+
+const authenticateKioskKey = (req, res, next) => {
+  const apiKey = req.headers['x-kiosk-api-key'];
+  
+  if (!apiKey || apiKey !== KIOSK_API_KEY) {
+    return res.status(403).json({ error: 'Invalid or missing kiosk API key' });
+  }
+  
+  next();
 };
 
 app.post('/api/login', (req, res) => {
@@ -124,7 +143,7 @@ app.delete('/api/detections', authenticateToken, (req, res) => {
   res.json({ message: 'All detections cleared' });
 });
 
-app.post('/api/detections/kiosk', (req, res) => {
+app.post('/api/detections/kiosk', authenticateKioskKey, (req, res) => {
   const { age, gender, confidence, faceDescriptor } = req.body;
   
   if (!faceDescriptor || !Array.isArray(faceDescriptor) || faceDescriptor.length === 0) {
@@ -169,12 +188,20 @@ app.post('/api/detections/kiosk', (req, res) => {
   res.json({ id: result.lastInsertRowid, duplicate: false });
 });
 
-app.listen(PORT, 'localhost', () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+if (IS_PRODUCTION) {
+  app.get('*', (req, res) => {
+    res.sendFile(join(__dirname, '../client/dist/index.html'));
+  });
+}
+
+const HOST = IS_PRODUCTION ? '0.0.0.0' : 'localhost';
+
+app.listen(PORT, HOST, () => {
+  console.log(`Server running on http://${HOST}:${PORT}`);
   if (JWT_SECRET === 'your-secret-key-change-in-production') {
     console.warn('WARNING: Using default JWT_SECRET. Set JWT_SECRET environment variable for production!');
   }
   if (KIOSK_API_KEY === 'default-kiosk-key') {
-    console.warn('WARNING: Using default KIOSK_API_KEY. Set KIOSK_API_KEY environment variable for production!');
+    console.warn('WARNING: Using default KIOSK_API_KEY. Set KIOSK_API_KEY or VITE_KIOSK_API_KEY environment variable for production!');
   }
 });

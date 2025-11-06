@@ -5,6 +5,8 @@ import "./FaceDetection.css";
 function FaceDetection({ onDetection, isKioskMode = false }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const offscreenCanvasRef = useRef(null);
+  const persistentDetectionRef = useRef(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [isDetecting, setIsDetecting] = useState(false);
@@ -17,18 +19,21 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
   const lastDetectionTimeRef = useRef(0);
   const lastFaceSeenTimeRef = useRef(0);
   const isDetectingRef = useRef(false);
-  const BUFFER_SIZE = 30;
+  const BUFFER_SIZE = 18;
   const MIN_FACE_SIZE = isKioskMode ? 60 : 80;
-  const MIN_DETECTION_SCORE = isKioskMode ? 0.4 : 0.5;
+  const MIN_DETECTION_SCORE = isKioskMode ? 0.55 : 0.45;
   const MIN_AGE = 1;
   const MAX_AGE = 120;
   const OUTLIER_THRESHOLD = 1.5;
-  const MIN_LANDMARK_QUALITY = isKioskMode ? 0.35 : 0.45;
-  const SAMPLES_FOR_SAVE = isKioskMode ? 5 : 15;
+  const MIN_LANDMARK_QUALITY = isKioskMode ? 0.4 : 0.45;
+  const SAMPLES_FOR_SAVE = isKioskMode ? 4 : 6;
   const NEW_PERSON_THRESHOLD = 0.6;
-  const DETECTION_COOLDOWN = isKioskMode ? 2000 : 3000;
-  const NO_FACE_RESET_TIME = isKioskMode ? 3000 : 5000;
-  const MIN_FACE_ANGLE_THRESHOLD = isKioskMode ? 45 : 30;
+  const DETECTION_COOLDOWN = isKioskMode ? 1500 : 2500;
+  const NO_FACE_RESET_TIME = isKioskMode ? 2500 : 4000;
+  const MIN_FACE_ANGLE_THRESHOLD = isKioskMode ? 40 : 25;
+  const DETECTION_INTERVAL = 65;
+  const PROCESSING_WIDTH = 1280;
+  const PROCESSING_HEIGHT = 720;
 
   const getAgeRange = (age, confidence = 0.7) => {
     let margin;
@@ -85,7 +90,7 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
       lockedAgeRef.current = null;
       lockedGenderRef.current = null;
       lastFaceSeenTimeRef.current = 0;
-      detectionIntervalRef.current = setInterval(detectFaces, 80);
+      detectionIntervalRef.current = setInterval(detectFaces, DETECTION_INTERVAL);
       setIsDetecting(true);
     }
   };
@@ -94,8 +99,8 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
           facingMode: "user",
         },
       });
@@ -341,23 +346,51 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
         return;
       }
 
+      if (!offscreenCanvasRef.current) {
+        offscreenCanvasRef.current = document.createElement('canvas');
+        offscreenCanvasRef.current.width = PROCESSING_WIDTH;
+        offscreenCanvasRef.current.height = PROCESSING_HEIGHT;
+      }
+
+      const offscreenCanvas = offscreenCanvasRef.current;
+      const offscreenCtx = offscreenCanvas.getContext('2d');
+      offscreenCtx.drawImage(video, 0, 0, PROCESSING_WIDTH, PROCESSING_HEIGHT);
+
       const displaySize = {
         width: video.videoWidth,
         height: video.videoHeight,
       };
       faceapi.matchDimensions(canvas, displaySize);
 
-      const detections = await faceapi
+      const processingSize = {
+        width: PROCESSING_WIDTH,
+        height: PROCESSING_HEIGHT,
+      };
+
+      let detectionsPromise = faceapi
         .detectAllFaces(
-          video,
+          offscreenCanvas,
           new faceapi.SsdMobilenetv1Options({
             minConfidence: MIN_DETECTION_SCORE,
-            maxResults: 10,
+            maxResults: 2,
           }),
         )
         .withFaceLandmarks()
-        .withFaceDescriptors()
-        .withAgeAndGender();
+        .withFaceDescriptors();
+
+      if (persistentDetectionRef.current >= 2) {
+        detectionsPromise = detectionsPromise.withAgeAndGender();
+      }
+
+      const detections = await detectionsPromise;
+
+      if (detections.length > 0) {
+        persistentDetectionRef.current++;
+      } else {
+        persistentDetectionRef.current = 0;
+      }
+
+      const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
       const ctx = canvas.getContext("2d");
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -575,7 +608,7 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
       lastSavedDescriptorRef.current = null;
       lastDetectionTimeRef.current = 0;
       lastFaceSeenTimeRef.current = 0;
-      detectionIntervalRef.current = setInterval(detectFaces, 80);
+      detectionIntervalRef.current = setInterval(detectFaces, DETECTION_INTERVAL);
       setIsDetecting(true);
     }
   };
@@ -616,19 +649,16 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
 
       {!isLoading && !error && (
         <div className="accuracy-tips">
-          <strong>🚪 Entrance Detection System - High Accuracy Mode</strong>
+          <strong>🚪 Entrance Detection System - Optimized SSD MobileNetV1 Mode</strong>
           <ul>
             <li>
-              <strong>🎯 SSD MobileNetV1 Model:</strong> Professional-grade face
-              detection for superior age accuracy
+              <strong>⚡ SSD MobileNetV1 AI:</strong> Professional-grade accuracy with optimized speed (65ms intervals)
             </li>
             <li>
-              <strong>📊 Smart Quality Filtering:</strong> Only accepts frontal
-              faces with good lighting
+              <strong>📊 Smart Processing:</strong> Adaptive resolution (720p processing, 1080p display) for faster detection
             </li>
             <li>
-              <strong>⚡ Multi-Sample Analysis:</strong> Collects 15+ samples
-              with advanced averaging
+              <strong>🚀 Efficient Sampling:</strong> Only 6 quality samples needed with enhanced filtering for quick results
             </li>
             <li>
               <strong>🔒 Age Lock:</strong> Age locked once detected -
@@ -639,7 +669,7 @@ function FaceDetection({ onDetection, isKioskMode = false }) {
               twice within 1 hour
             </li>
             <li>
-              <strong>💡 Tip:</strong> Customer should pause ~1-2 seconds at
+              <strong>💡 Tip:</strong> Customer should pause ~1 second at
               entrance for best results
             </li>
           </ul>

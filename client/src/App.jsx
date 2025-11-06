@@ -4,7 +4,7 @@ import Dashboard from './components/Dashboard';
 import FaceDetection from './components/FaceDetection';
 import './App.css';
 
-const KIOSK_MODE = import.meta.env.VITE_KIOSK_MODE === 'true';
+const KIOSK_MODE = import.meta.env.VITE_ADMIN_MODE !== 'true';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token'));
@@ -37,6 +37,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-Kiosk-API-Key': import.meta.env.VITE_KIOSK_API_KEY || 'default-kiosk-key',
         },
         body: JSON.stringify({
           age,
