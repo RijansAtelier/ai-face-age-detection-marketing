@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken';
 import db from './database.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { RekognitionClient, DetectFacesCommand } from '@aws-sdk/client-rekognition';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -14,8 +15,17 @@ const PORT = process.env.PORT || (IS_PRODUCTION ? 5000 : 3001);
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const KIOSK_API_KEY = process.env.KIOSK_API_KEY || process.env.VITE_KIOSK_API_KEY || 'default-kiosk-key';
 
+const rekognitionClient = new RekognitionClient({
+  region: process.env.AWS_REGION || 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 if (IS_PRODUCTION) {
   app.use(express.static(join(__dirname, '../client/dist')));
@@ -55,6 +65,52 @@ app.post('/api/login', (req, res) => {
 
   const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
   res.json({ token, username: user.username });
+});
+
+app.post('/api/rekognition/detect-faces', async (req, res) => {
+  try {
+    const { image } = req.body;
+    
+    if (!image) {
+      return res.status(400).json({ error: 'No image provided' });
+    }
+
+    const imageBuffer = Buffer.from(image, 'base64');
+
+    const command = new DetectFacesCommand({
+      Image: {
+        Bytes: imageBuffer,
+      },
+      Attributes: ['ALL'],
+    });
+
+    const response = await rekognitionClient.send(command);
+
+    const faces = response.FaceDetails.map((face) => {
+      const genderValue = face.Gender?.Value || 'Unknown';
+      const genderConfidence = face.Gender?.Confidence || 0;
+      const ageRangeLow = face.AgeRange?.Low || 0;
+      const ageRangeHigh = face.AgeRange?.High || 0;
+
+      return {
+        boundingBox: {
+          left: face.BoundingBox.Left,
+          top: face.BoundingBox.Top,
+          width: face.BoundingBox.Width,
+          height: face.BoundingBox.Height,
+        },
+        gender: genderValue,
+        ageRangeLow: ageRangeLow,
+        ageRangeHigh: ageRangeHigh,
+        confidence: genderConfidence,
+      };
+    });
+
+    res.json({ faces });
+  } catch (error) {
+    console.error('Rekognition error:', error);
+    res.status(500).json({ error: 'Failed to detect faces', details: error.message });
+  }
 });
 
 app.post('/api/detections', authenticateToken, (req, res) => {

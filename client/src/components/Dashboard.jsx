@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import FaceDetection from './FaceDetection';
+import RekognitionFaceDetection from './RekognitionFaceDetection';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import './Dashboard.css';
@@ -322,7 +322,7 @@ function Dashboard({ username, onLogout, token }) {
                 {detectionMessage.text}
               </div>
             )}
-            <FaceDetection onDetection={handleDetection} />
+            <RekognitionFaceDetection onDetection={handleDetection} />
           </div>
 
           <div className="actions-section">

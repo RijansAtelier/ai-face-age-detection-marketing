@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
-import FaceDetection from './components/FaceDetection';
+import RekognitionFaceDetection from './components/RekognitionFaceDetection';
 import './App.css';
 
 const KIOSK_MODE = import.meta.env.VITE_ADMIN_MODE !== 'true';
@@ -68,7 +68,7 @@ function App() {
             <span>Detected Today: {kioskDetectionCount}</span>
           </div>
         </div>
-        <FaceDetection onDetection={handleKioskDetection} isKioskMode={true} />
+        <RekognitionFaceDetection onDetection={handleKioskDetection} isKioskMode={true} />
         <div className="kiosk-footer">
           <p>System running in automated mode - no login required</p>
         </div>
