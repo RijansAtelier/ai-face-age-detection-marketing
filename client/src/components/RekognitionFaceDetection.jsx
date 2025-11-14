@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./FaceDetection.css";
 
-function RekognitionFaceDetection({ onDetection, isKioskMode = false }) {
+function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = null }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -9,9 +9,7 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false }) {
   const [isDetecting, setIsDetecting] = useState(false);
   const [currentDetections, setCurrentDetections] = useState([]);
   const detectionIntervalRef = useRef(null);
-  const lastDetectionTimeRef = useRef({});
   const DETECTION_INTERVAL = 2000; // 2 seconds between detections
-  const DETECTION_COOLDOWN = 60000; // 1 hour cooldown for same person
 
   useEffect(() => {
     const init = async () => {
@@ -94,11 +92,19 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false }) {
       const base64Data = frameDataUrl.split(',')[1];
 
       // Send to backend for Rekognition processing
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      } else if (isKioskMode) {
+        headers['X-Kiosk-API-Key'] = import.meta.env.VITE_KIOSK_API_KEY || 'default-kiosk-key';
+      }
+      
       const response = await fetch('/api/rekognition/detect-faces', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({ image: base64Data }),
       });
 
@@ -113,25 +119,25 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false }) {
         setCurrentDetections(data.faces);
         drawDetections(data.faces);
         
-        // Save each detected face
-        const now = Date.now();
-        for (const face of data.faces) {
-          const faceKey = `${face.gender}_${face.ageRangeLow}_${face.ageRangeHigh}`;
-          
-          // Check cooldown
-          if (!lastDetectionTimeRef.current[faceKey] || 
-              now - lastDetectionTimeRef.current[faceKey] > DETECTION_COOLDOWN) {
+        // Save each detected face - backend handles deduplication
+        for (let i = 0; i < data.faces.length; i++) {
+          const face = data.faces[i];
+          if (onDetection) {
+            // Send full bounding box data to server for accurate IoU calculation
+            const faceData = {
+              boundingBox: face.boundingBox,
+              gender: face.gender,
+              ageRangeLow: face.ageRangeLow,
+              ageRangeHigh: face.ageRangeHigh,
+              confidence: face.confidence
+            };
             
-            lastDetectionTimeRef.current[faceKey] = now;
-            
-            if (onDetection) {
-              onDetection(
-                Math.round((face.ageRangeLow + face.ageRangeHigh) / 2),
-                face.gender.toLowerCase(),
-                face.confidence / 100,
-                null // No face descriptor with Rekognition
-              );
-            }
+            onDetection(
+              Math.round((face.ageRangeLow + face.ageRangeHigh) / 2),
+              face.gender.toLowerCase(),
+              face.confidence / 100,
+              faceData // Pass full face data for backend deduplication
+            );
           }
         }
       } else {
@@ -191,7 +197,6 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false }) {
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
     } else {
-      lastDetectionTimeRef.current = {};
       detectionIntervalRef.current = setInterval(detectFaces, DETECTION_INTERVAL);
       setIsDetecting(true);
     }

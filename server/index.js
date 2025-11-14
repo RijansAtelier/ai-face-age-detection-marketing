@@ -67,7 +67,25 @@ app.post('/api/login', (req, res) => {
   res.json({ token, username: user.username });
 });
 
-app.post('/api/rekognition/detect-faces', async (req, res) => {
+const authenticateTokenOrKiosk = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const apiKey = req.headers['x-kiosk-api-key'];
+  
+  if (apiKey && apiKey === KIOSK_API_KEY) {
+    return next();
+  }
+  
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token) return res.sendStatus(401);
+  
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next();
+  });
+};
+
+app.post('/api/rekognition/detect-faces', authenticateTokenOrKiosk, async (req, res) => {
   try {
     const { image } = req.body;
     
@@ -116,44 +134,71 @@ app.post('/api/rekognition/detect-faces', async (req, res) => {
 app.post('/api/detections', authenticateToken, (req, res) => {
   const { age, gender, confidence, faceDescriptor } = req.body;
   
-  if (!faceDescriptor || !Array.isArray(faceDescriptor) || faceDescriptor.length === 0) {
-    console.warn('Detection saved without face descriptor - deduplication will not work');
-    const result = db.prepare(
-      'INSERT INTO detections (age, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?)'
-    ).run(age, gender, confidence, null);
-    return res.json({ id: result.lastInsertRowid, duplicate: false, warning: 'No face descriptor' });
+  // Reject requests without face descriptor to prevent bypass of deduplication
+  if (!faceDescriptor) {
+    return res.status(400).json({ error: 'Face descriptor is required for deduplication' });
   }
   
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const recentDetections = db.prepare(
-    'SELECT * FROM detections WHERE timestamp > ?'
-  ).all(oneHourAgo);
+  // Handle Rekognition-based detections with object descriptors
+  if (faceDescriptor && typeof faceDescriptor === 'object' && faceDescriptor.boundingBox) {
+    // Validate descriptor format
+    if (!validateRekognitionDescriptor(faceDescriptor)) {
+      return res.status(400).json({ error: 'Invalid Rekognition descriptor format - numeric bounding box required' });
+    }
+    
+    const duplicate = checkRekognitionDuplicate(age, gender, faceDescriptor);
+    
+    if (duplicate) {
+      return res.json({ 
+        id: duplicate.id, 
+        duplicate: true, 
+        message: 'Person already detected within the last hour',
+        lastDetected: duplicate.timestamp
+      });
+    }
+  }
   
-  const MATCH_THRESHOLD = 0.6;
-  
-  for (const detection of recentDetections) {
-    if (detection.face_descriptor) {
-      try {
-        const storedDescriptor = JSON.parse(detection.face_descriptor);
-        const distance = euclideanDistance(faceDescriptor, storedDescriptor);
-        
-        if (distance < MATCH_THRESHOLD) {
-          return res.json({ 
-            id: detection.id, 
-            duplicate: true, 
-            message: 'Person already detected within the last hour',
-            lastDetected: detection.timestamp
-          });
+  // Handle legacy array-based descriptors (face-api.js)
+  else if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const recentDetections = db.prepare(
+      'SELECT * FROM detections WHERE timestamp > ?'
+    ).all(oneHourAgo);
+    
+    const MATCH_THRESHOLD = 0.6;
+    
+    for (const detection of recentDetections) {
+      if (detection.face_descriptor) {
+        try {
+          const storedDescriptor = JSON.parse(detection.face_descriptor);
+          if (Array.isArray(storedDescriptor)) {
+            const distance = euclideanDistance(faceDescriptor, storedDescriptor);
+            
+            if (distance < MATCH_THRESHOLD) {
+              return res.json({ 
+                id: detection.id, 
+                duplicate: true, 
+                message: 'Person already detected within the last hour',
+                lastDetected: detection.timestamp
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing face descriptor:', e);
         }
-      } catch (e) {
-        console.error('Error parsing face descriptor:', e);
       }
     }
   }
   
+  // Reject invalid descriptor formats (not Rekognition object or array)
+  else {
+    return res.status(400).json({ error: 'Invalid face descriptor format - must be Rekognition object or array' });
+  }
+  
+  // Save the detection
   const result = db.prepare(
     'INSERT INTO detections (age, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?)'
-  ).run(age, gender, confidence, JSON.stringify(faceDescriptor));
+  ).run(age, gender, confidence, faceDescriptor ? JSON.stringify(faceDescriptor) : null);
   
   res.json({ id: result.lastInsertRowid, duplicate: false });
 });
@@ -170,6 +215,106 @@ function euclideanDistance(descriptor1, descriptor2) {
   }
   
   return Math.sqrt(sum);
+}
+
+function calculateIoU(box1, box2) {
+  const xOverlap = Math.max(0, Math.min(box1.left + box1.width, box2.left + box2.width) - Math.max(box1.left, box2.left));
+  const yOverlap = Math.max(0, Math.min(box1.top + box1.height, box2.top + box2.height) - Math.max(box1.top, box2.top));
+  const intersection = xOverlap * yOverlap;
+  
+  const area1 = box1.width * box1.height;
+  const area2 = box2.width * box2.height;
+  const union = area1 + area2 - intersection;
+  
+  return union > 0 ? intersection / union : 0;
+}
+
+function parseFaceIdComponents(faceId) {
+  if (typeof faceId !== 'string' || !faceId.includes('_')) return null;
+  
+  const parts = faceId.split('_');
+  if (parts.length < 6) return null;
+  
+  return {
+    gender: parts[0],
+    age: parseInt(parts[1]),
+    left: parseFloat(parts[2]),
+    top: parseFloat(parts[3]),
+    width: parseFloat(parts[4]),
+    height: parseFloat(parts[5])
+  };
+}
+
+function normalizeBoundingBox(box) {
+  return {
+    left: parseFloat(box.left) || 0,
+    top: parseFloat(box.top) || 0,
+    width: parseFloat(box.width) || 0,
+    height: parseFloat(box.height) || 0
+  };
+}
+
+function validateRekognitionDescriptor(faceDescriptor) {
+  if (!faceDescriptor || typeof faceDescriptor !== 'object') {
+    return false;
+  }
+  
+  const bb = faceDescriptor.boundingBox;
+  if (!bb || typeof bb !== 'object') {
+    return false;
+  }
+  
+  // Ensure all bounding box fields are numeric
+  if (typeof bb.left !== 'number' || typeof bb.top !== 'number' || 
+      typeof bb.width !== 'number' || typeof bb.height !== 'number') {
+    return false;
+  }
+  
+  return true;
+}
+
+function checkRekognitionDuplicate(age, gender, faceDescriptor) {
+  // faceDescriptor is an object with boundingBox, gender, ageRangeLow, ageRangeHigh, confidence
+  if (!faceDescriptor || typeof faceDescriptor !== 'object' || !faceDescriptor.boundingBox) {
+    return null;
+  }
+  
+  // Validate bounding box has numeric values
+  const bb = faceDescriptor.boundingBox;
+  if (typeof bb.left !== 'number' || typeof bb.top !== 'number' || 
+      typeof bb.width !== 'number' || typeof bb.height !== 'number') {
+    return null;
+  }
+  
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const recentDetections = db.prepare(
+    'SELECT * FROM detections WHERE timestamp > ? AND gender = ? AND ABS(age - ?) <= 3'
+  ).all(oneHourAgo, gender, age);
+  
+  const currentBox = normalizeBoundingBox(faceDescriptor.boundingBox);
+  
+  for (const detection of recentDetections) {
+    if (detection.face_descriptor) {
+      try {
+        const storedData = JSON.parse(detection.face_descriptor);
+        
+        // Check if it's a Rekognition object descriptor
+        if (storedData && typeof storedData === 'object' && storedData.boundingBox) {
+          const storedBox = normalizeBoundingBox(storedData.boundingBox);
+          const iou = calculateIoU(currentBox, storedBox);
+          
+          // IoU > 0.5 means likely the same person (tolerates small movement/jitter)
+          if (iou > 0.5) {
+            return detection;
+          }
+        }
+      } catch (e) {
+        // Ignore parse errors
+      }
+    }
+  }
+  
+  return null;
 }
 
 app.get('/api/detections', authenticateToken, (req, res) => {
@@ -202,44 +347,71 @@ app.delete('/api/detections', authenticateToken, (req, res) => {
 app.post('/api/detections/kiosk', authenticateKioskKey, (req, res) => {
   const { age, gender, confidence, faceDescriptor } = req.body;
   
-  if (!faceDescriptor || !Array.isArray(faceDescriptor) || faceDescriptor.length === 0) {
-    console.warn('Kiosk detection saved without face descriptor - deduplication will not work');
-    const result = db.prepare(
-      'INSERT INTO detections (age, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?)'
-    ).run(age, gender, confidence, null);
-    return res.json({ id: result.lastInsertRowid, duplicate: false, warning: 'No face descriptor' });
+  // Reject requests without face descriptor to prevent bypass of deduplication
+  if (!faceDescriptor) {
+    return res.status(400).json({ error: 'Face descriptor is required for deduplication' });
   }
   
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const recentDetections = db.prepare(
-    'SELECT * FROM detections WHERE timestamp > ?'
-  ).all(oneHourAgo);
+  // Handle Rekognition-based detections with object descriptors
+  if (faceDescriptor && typeof faceDescriptor === 'object' && faceDescriptor.boundingBox) {
+    // Validate descriptor format
+    if (!validateRekognitionDescriptor(faceDescriptor)) {
+      return res.status(400).json({ error: 'Invalid Rekognition descriptor format - numeric bounding box required' });
+    }
+    
+    const duplicate = checkRekognitionDuplicate(age, gender, faceDescriptor);
+    
+    if (duplicate) {
+      return res.json({ 
+        id: duplicate.id, 
+        duplicate: true, 
+        message: 'Person already detected within the last hour',
+        lastDetected: duplicate.timestamp
+      });
+    }
+  }
   
-  const MATCH_THRESHOLD = 0.6;
-  
-  for (const detection of recentDetections) {
-    if (detection.face_descriptor) {
-      try {
-        const storedDescriptor = JSON.parse(detection.face_descriptor);
-        const distance = euclideanDistance(faceDescriptor, storedDescriptor);
-        
-        if (distance < MATCH_THRESHOLD) {
-          return res.json({ 
-            id: detection.id, 
-            duplicate: true, 
-            message: 'Person already detected within the last hour',
-            lastDetected: detection.timestamp
-          });
+  // Handle legacy array-based descriptors (face-api.js)
+  else if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const recentDetections = db.prepare(
+      'SELECT * FROM detections WHERE timestamp > ?'
+    ).all(oneHourAgo);
+    
+    const MATCH_THRESHOLD = 0.6;
+    
+    for (const detection of recentDetections) {
+      if (detection.face_descriptor) {
+        try {
+          const storedDescriptor = JSON.parse(detection.face_descriptor);
+          if (Array.isArray(storedDescriptor)) {
+            const distance = euclideanDistance(faceDescriptor, storedDescriptor);
+            
+            if (distance < MATCH_THRESHOLD) {
+              return res.json({ 
+                id: detection.id, 
+                duplicate: true, 
+                message: 'Person already detected within the last hour',
+                lastDetected: detection.timestamp
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing face descriptor:', e);
         }
-      } catch (e) {
-        console.error('Error parsing face descriptor:', e);
       }
     }
   }
   
+  // Reject invalid descriptor formats (not Rekognition object or array)
+  else {
+    return res.status(400).json({ error: 'Invalid face descriptor format - must be Rekognition object or array' });
+  }
+  
+  // Save the detection
   const result = db.prepare(
     'INSERT INTO detections (age, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?)'
-  ).run(age, gender, confidence, JSON.stringify(faceDescriptor));
+  ).run(age, gender, confidence, faceDescriptor ? JSON.stringify(faceDescriptor) : null);
   
   res.json({ id: result.lastInsertRowid, duplicate: false });
 });

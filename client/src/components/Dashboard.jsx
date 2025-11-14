@@ -322,7 +322,7 @@ function Dashboard({ username, onLogout, token }) {
                 {detectionMessage.text}
               </div>
             )}
-            <RekognitionFaceDetection onDetection={handleDetection} />
+            <RekognitionFaceDetection onDetection={handleDetection} token={token} />
           </div>
 
           <div className="actions-section">
