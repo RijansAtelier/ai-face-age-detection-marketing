@@ -73,7 +73,7 @@ function App() {
       </div>
 
       <div className="camera-container">
-        <RekognitionFaceDetection onDetection={() => {}} />
+        <RekognitionFaceDetection onDetection={() => {}} isKioskMode={true} />
       </div>
 
       {showLoginModal && (

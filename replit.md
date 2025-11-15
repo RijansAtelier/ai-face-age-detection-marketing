@@ -1,46 +1,51 @@
 # AI Face Age Detection SaaS
 
 ## Overview
-A full-stack SaaS application for real-time face detection, age and gender estimation. Features both an admin dashboard and an automated kiosk mode for entrance monitoring.
+A full-stack SaaS application for real-time face detection using AWS Rekognition. Features a public camera view and an admin dashboard for analytics and data management.
 
 ## Project Structure
 - **Frontend (React + Vite)**: `/client` - User interface, camera feed, face detection visualization
 - **Backend (Express)**: `/server` - API endpoints, authentication, database management, AWS Rekognition integration
 - **Database (SQLite)**: `server/detections.db` - Stores user credentials and detection data
 
-## Recent Changes (November 14, 2025)
-- Initial project setup completed in Replit environment
-- Installed all dependencies (root, client)
-- Configured workflow for concurrent frontend/backend development
+## Recent Changes (November 15, 2025)
+- **Removed face-api.js**: Application now exclusively uses AWS Rekognition for accurate face detection
+- **New UI Design**: Public camera view with Admin Login button instead of kiosk/admin modes
+- **Simplified Authentication**: Modal-based login system overlaying the camera view
+- **AWS Integration**: Configured with AWS credentials (Mumbai region) for Rekognition API
 - Frontend properly configured on port 5000 with host settings for Replit proxy
 - Backend running on port 3001 (localhost)
 - Database initialized with default admin user
 
 ## Features
-1. **Two Operating Modes**:
-   - **Kiosk Mode** (default): Automated entrance monitoring system
-   - **Admin Mode**: Dashboard with analytics, user authentication, data management
+1. **Public Camera View**:
+   - Live camera feed with real-time face detection
+   - Displays detected faces with bounding boxes
+   - Shows age and gender estimates
+   - No login required for viewing
 
-2. **Face Detection**:
-   - Local detection using face-api.js library
-   - Cloud detection using AWS Rekognition
-   - Age and gender estimation
-   - Duplicate detection (prevents counting same person within 1 hour)
-
-3. **Dashboard Analytics**:
+2. **Admin Dashboard** (Login Required):
    - Total detections count
-   - Gender distribution
+   - Gender distribution analytics
    - Average age calculation
-   - Age range demographics
+   - Age range demographics visualization
+   - Live camera feed with detection saving
    - PDF report export
    - Clear all data functionality
+   - Logout option
+
+3. **Face Detection (AWS Rekognition)**:
+   - Accurate age and gender estimation
+   - Real-time bounding box visualization
+   - Duplicate detection (prevents counting same person within 1 hour using IoU algorithm)
+   - Confidence scores for each detection
 
 ## Technology Stack
-- **Frontend**: React 19, Vite 7, face-api.js
+- **Frontend**: React 19, Vite 7
 - **Backend**: Node.js, Express 5
 - **Database**: SQLite (better-sqlite3)
 - **Authentication**: JWT (JSON Web Tokens)
-- **AI/ML**: AWS Rekognition, TensorFlow.js (via face-api.js)
+- **AI/ML**: AWS Rekognition
 
 ## Environment Variables
 ### Required for AWS Rekognition:
