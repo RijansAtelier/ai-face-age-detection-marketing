@@ -65,14 +65,11 @@ function App() {
 
   return (
     <div className="app public-view">
-      <div className="public-header">
-        <h1>🎥 AI Face Detection System</h1>
-        <button className="login-button" onClick={() => setShowLoginModal(true)}>
-          Admin Login
-        </button>
-      </div>
+      <button className="floating-login-button" onClick={() => setShowLoginModal(true)}>
+        Login
+      </button>
 
-      <div className="camera-container">
+      <div className="fullscreen-camera">
         <RekognitionFaceDetection onDetection={() => {}} isKioskMode={true} />
       </div>
 
