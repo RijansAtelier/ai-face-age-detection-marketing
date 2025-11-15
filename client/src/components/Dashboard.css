@@ -357,3 +357,140 @@
 .clear-btn:hover {
   background: #d32f2f;
 }
+
+/* Responsive Design */
+@media screen and (max-width: 1200px) {
+  .stats-panel {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .stat-card.demographics {
+    grid-column: span 2;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .dashboard-header {
+    padding: 15px 20px;
+    flex-direction: column;
+    gap: 15px;
+    align-items: flex-start;
+  }
+
+  .dashboard-header h1 {
+    font-size: 20px;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .dashboard-content {
+    padding: 20px 15px;
+  }
+
+  .stats-panel {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .stat-card {
+    padding: 20px;
+  }
+
+  .stat-card.demographics {
+    grid-column: span 1;
+  }
+
+  .stat-value {
+    font-size: 28px;
+  }
+
+  .main-panel {
+    padding: 20px;
+    border-radius: 10px;
+  }
+
+  .actions-section {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .action-btn {
+    width: 100%;
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  .age-range {
+    grid-template-columns: 50px 1fr 35px;
+    gap: 8px;
+  }
+
+  .age-label {
+    font-size: 12px;
+  }
+
+  .age-count {
+    font-size: 13px;
+  }
+
+  .range-mode-selector {
+    gap: 6px;
+  }
+
+  .mode-btn {
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .dashboard-header h1 {
+    font-size: 18px;
+  }
+
+  .username {
+    font-size: 14px;
+  }
+
+  .logout-btn {
+    padding: 8px 15px;
+    font-size: 14px;
+  }
+
+  .stat-card h3 {
+    font-size: 12px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+  }
+
+  .main-panel {
+    padding: 15px;
+  }
+
+  .camera-section h2 {
+    font-size: 18px;
+  }
+
+  .detection-message {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+
+  .age-demographics {
+    gap: 10px;
+  }
+
+  .gender-bar {
+    height: 35px;
+    font-size: 14px;
+  }
+}

@@ -132,7 +132,7 @@ app.post('/api/rekognition/detect-faces', authenticateTokenOrKiosk, async (req, 
 });
 
 app.post('/api/detections', authenticateToken, (req, res) => {
-  const { age, gender, confidence, faceDescriptor } = req.body;
+  const { age, gender, confidence, faceDescriptor, ageRange } = req.body;
   
   // Reject requests without face descriptor to prevent bypass of deduplication
   if (!faceDescriptor) {
@@ -197,8 +197,8 @@ app.post('/api/detections', authenticateToken, (req, res) => {
   
   // Save the detection
   const result = db.prepare(
-    'INSERT INTO detections (age, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?)'
-  ).run(age, gender, confidence, faceDescriptor ? JSON.stringify(faceDescriptor) : null);
+    'INSERT INTO detections (age, age_range, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?, ?)'
+  ).run(age, ageRange || null, gender, confidence, faceDescriptor ? JSON.stringify(faceDescriptor) : null);
   
   res.json({ id: result.lastInsertRowid, duplicate: false });
 });
@@ -345,7 +345,7 @@ app.delete('/api/detections', authenticateToken, (req, res) => {
 });
 
 app.post('/api/detections/kiosk', authenticateKioskKey, (req, res) => {
-  const { age, gender, confidence, faceDescriptor } = req.body;
+  const { age, gender, confidence, faceDescriptor, ageRange } = req.body;
   
   // Reject requests without face descriptor to prevent bypass of deduplication
   if (!faceDescriptor) {
@@ -410,8 +410,8 @@ app.post('/api/detections/kiosk', authenticateKioskKey, (req, res) => {
   
   // Save the detection
   const result = db.prepare(
-    'INSERT INTO detections (age, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?)'
-  ).run(age, gender, confidence, faceDescriptor ? JSON.stringify(faceDescriptor) : null);
+    'INSERT INTO detections (age, age_range, gender, confidence, face_descriptor) VALUES (?, ?, ?, ?, ?)'
+  ).run(age, ageRange || null, gender, confidence, faceDescriptor ? JSON.stringify(faceDescriptor) : null);
   
   res.json({ id: result.lastInsertRowid, duplicate: false });
 });

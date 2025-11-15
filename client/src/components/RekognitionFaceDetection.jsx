@@ -143,10 +143,11 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
             };
             
             onDetection(
-              Math.round((face.ageRangeLow + face.ageRangeHigh) / 2),
+              Math.round((face.ageRangeLow + face.ageRangeHigh) / 2), // Average for stats
               face.gender.toLowerCase(),
               face.confidence / 100,
-              faceData // Pass full face data for backend deduplication
+              faceData, // Pass full face data for backend deduplication
+              `${face.ageRangeLow}-${face.ageRangeHigh}` // Age range for display
             );
           }
         }
@@ -188,11 +189,11 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
       const labelHeight = 35;
       ctx.fillRect(x, y > labelHeight ? y - labelHeight : y + height, width, labelHeight);
 
-      // Draw label with age and gender
+      // Draw label with age range and gender
       ctx.fillStyle = "#00FF00";
       ctx.font = "bold 22px Arial";
-      const avgAge = Math.round((face.ageRangeLow + face.ageRangeHigh) / 2);
-      const label = `${face.gender} • Age: ${avgAge}`;
+      const ageRange = `${face.ageRangeLow}-${face.ageRangeHigh}`;
+      const label = `${face.gender} • Age: ${ageRange}`;
       ctx.fillText(label, x + 5, y > labelHeight ? y - 10 : y + height + 25);
     });
   };

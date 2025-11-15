@@ -106,7 +106,7 @@ function Dashboard({ username, onLogout, token }) {
     setAgeDistribution(distribution);
   };
 
-  const handleDetection = async (age, gender, confidence, faceDescriptor) => {
+  const handleDetection = async (age, gender, confidence, faceDescriptor, ageRange) => {
     try {
       const response = await fetch(`${API_URL}/api/detections`, {
         method: 'POST',
@@ -114,7 +114,7 @@ function Dashboard({ username, onLogout, token }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({ age, gender, confidence, faceDescriptor })
+        body: JSON.stringify({ age, gender, confidence, faceDescriptor, ageRange })
       });
       
       const result = await response.json();
@@ -163,7 +163,7 @@ function Dashboard({ username, onLogout, token }) {
         const tableData = detections.slice(0, 100).map(d => [
           new Date(d.timestamp).toLocaleString(),
           d.gender || 'N/A',
-          d.age || 'N/A',
+          d.age_range || d.age || 'N/A',
           d.confidence ? `${(d.confidence * 100).toFixed(1)}%` : 'N/A'
         ]);
         
@@ -224,14 +224,119 @@ function Dashboard({ username, onLogout, token }) {
     }
   }, [ageRangeMode]);
 
-  return (
-    <div className="dashboard-minimal">
-      <button className="floating-logout-button" onClick={onLogout}>
-        ×
-      </button>
+  const malePercentage = stats.total > 0 ? ((stats.male / stats.total) * 100).toFixed(1) : 0;
+  const femalePercentage = stats.total > 0 ? ((stats.female / stats.total) * 100).toFixed(1) : 0;
+  const maxAgeCount = Math.max(...Object.values(ageDistribution), 1);
 
-      <div className="fullscreen-camera">
-        <RekognitionFaceDetection onDetection={handleDetection} token={token} />
+  return (
+    <div className="dashboard">
+      <div className="dashboard-header">
+        <h1>🎯 Face Detection Admin Dashboard</h1>
+        <div className="header-actions">
+          <span className="username">Welcome, {username}</span>
+          <button className="logout-btn" onClick={onLogout}>Logout</button>
+        </div>
+      </div>
+
+      <div className="dashboard-content">
+        <div className="stats-panel">
+          <div className="stat-card">
+            <h3>Total Detections</h3>
+            <p className="stat-value">{stats.total || 0}</p>
+            <span className="stat-label">All time</span>
+          </div>
+          
+          <div className="stat-card">
+            <h3>Male</h3>
+            <p className="stat-value">{stats.male || 0}</p>
+            <span className="stat-label">{malePercentage}% of total</span>
+          </div>
+          
+          <div className="stat-card">
+            <h3>Female</h3>
+            <p className="stat-value">{stats.female || 0}</p>
+            <span className="stat-label">{femalePercentage}% of total</span>
+          </div>
+          
+          <div className="stat-card">
+            <h3>Average Age</h3>
+            <p className="stat-value">{stats.averageAge || 0}</p>
+            <span className="stat-label">years old</span>
+          </div>
+
+          <div className="stat-card demographics">
+            <div className="demographics-header">
+              <h3>Age Distribution</h3>
+              <div className="range-mode-selector">
+                <button 
+                  className={`mode-btn ${ageRangeMode === '5-year' ? 'active' : ''}`}
+                  onClick={() => setAgeRangeMode('5-year')}
+                >
+                  5-Year
+                </button>
+                <button 
+                  className={`mode-btn ${ageRangeMode === '10-year' ? 'active' : ''}`}
+                  onClick={() => setAgeRangeMode('10-year')}
+                >
+                  10-Year
+                </button>
+              </div>
+            </div>
+            
+            <div className="gender-split">
+              <div className="gender-bar">
+                <div className="gender-bar-male" style={{ width: `${malePercentage}%` }}>
+                  {stats.male > 0 && `♂ ${stats.male}`}
+                </div>
+                <div className="gender-bar-female" style={{ width: `${femalePercentage}%` }}>
+                  {stats.female > 0 && `♀ ${stats.female}`}
+                </div>
+              </div>
+              <div className="gender-percentages">
+                <span className="male-pct">Male: {malePercentage}%</span>
+                <span className="female-pct">Female: {femalePercentage}%</span>
+              </div>
+            </div>
+
+            <div className="age-demographics">
+              {Object.entries(ageDistribution).map(([range, count]) => (
+                <div key={range} className="age-range">
+                  <span className="age-label">{range}</span>
+                  <div className="age-bar-container">
+                    <div 
+                      className="age-bar-fill" 
+                      style={{ width: `${(count / maxAgeCount) * 100}%` }}
+                    >
+                      {count > 0 && <span className="age-bar-text">{count}</span>}
+                    </div>
+                  </div>
+                  <span className="age-count">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="main-panel">
+          <div className="camera-section">
+            <h2>Live Detection</h2>
+            {detectionMessage && (
+              <div className={`detection-message ${detectionMessage.type}`}>
+                {detectionMessage.text}
+              </div>
+            )}
+            <RekognitionFaceDetection onDetection={handleDetection} token={token} />
+          </div>
+
+          <div className="actions-section">
+            <button className="action-btn export-btn" onClick={exportToPDF}>
+              📄 Export to PDF
+            </button>
+            <button className="action-btn clear-btn" onClick={clearData}>
+              🗑️ Clear All Data
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

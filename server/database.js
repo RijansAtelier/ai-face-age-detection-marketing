@@ -16,6 +16,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS detections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     age INTEGER,
+    age_range TEXT,
     gender TEXT,
     confidence REAL,
     face_descriptor TEXT,
