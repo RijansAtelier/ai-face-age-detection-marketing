@@ -9,7 +9,8 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
   const [isDetecting, setIsDetecting] = useState(false);
   const [currentDetections, setCurrentDetections] = useState([]);
   const detectionIntervalRef = useRef(null);
-  const DETECTION_INTERVAL = 2000; // 2 seconds between detections
+  const DETECTION_INTERVAL = 1000; // 1 second between detections for higher accuracy
+  const MIN_CONFIDENCE = 90; // Minimum confidence threshold (0-100)
 
   useEffect(() => {
     const init = async () => {
@@ -46,9 +47,10 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: 1920 },
-          height: { ideal: 1080 },
+          width: { ideal: 1920, min: 1280 },
+          height: { ideal: 1080, min: 720 },
           facingMode: "user",
+          frameRate: { ideal: 30 },
         },
       });
       if (videoRef.current) {
@@ -76,9 +78,14 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
+    
+    // Use high-quality settings for better AWS Rekognition accuracy
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, 0, 0);
     
-    return canvas.toDataURL('image/jpeg', 0.8);
+    // Increase JPEG quality to 0.95 for maximum accuracy
+    return canvas.toDataURL('image/jpeg', 0.95);
   };
 
   const detectFaces = async () => {
@@ -116,12 +123,15 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
       const data = await response.json();
       
       if (data.faces && data.faces.length > 0) {
-        setCurrentDetections(data.faces);
-        drawDetections(data.faces);
+        // Filter faces by minimum confidence threshold for higher accuracy
+        const highConfidenceFaces = data.faces.filter(face => face.confidence >= MIN_CONFIDENCE);
+        
+        setCurrentDetections(highConfidenceFaces);
+        drawDetections(highConfidenceFaces);
         
         // Save each detected face - backend handles deduplication
-        for (let i = 0; i < data.faces.length; i++) {
-          const face = data.faces[i];
+        for (let i = 0; i < highConfidenceFaces.length; i++) {
+          const face = highConfidenceFaces[i];
           if (onDetection) {
             // Send full bounding box data to server for accurate IoU calculation
             const faceData = {
@@ -168,19 +178,22 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
       const width = box.width * canvas.width;
       const height = box.height * canvas.height;
 
-      // Draw bounding box
+      // Draw green bounding box for all high-accuracy detections
       ctx.strokeStyle = "#00FF00";
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 4;
       ctx.strokeRect(x, y, width, height);
 
-      // Draw label
+      // Draw semi-transparent background for labels
+      ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+      const labelHeight = 35;
+      ctx.fillRect(x, y > labelHeight ? y - labelHeight : y + height, width, labelHeight);
+
+      // Draw label with age and gender
       ctx.fillStyle = "#00FF00";
       ctx.font = "bold 22px Arial";
-      ctx.strokeStyle = "#000000";
-      ctx.lineWidth = 3;
-      const label = `${face.gender} (${face.ageRangeLow}-${face.ageRangeHigh})`;
-      ctx.strokeText(label, x, y > 10 ? y - 10 : 10);
-      ctx.fillText(label, x, y > 10 ? y - 10 : 10);
+      const avgAge = Math.round((face.ageRangeLow + face.ageRangeHigh) / 2);
+      const label = `${face.gender} • Age: ${avgAge}`;
+      ctx.fillText(label, x + 5, y > labelHeight ? y - 10 : y + height + 25);
     });
   };
 
@@ -211,22 +224,19 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
 
       {!isLoading && !error && (
         <div className="accuracy-tips">
-          <strong>🚪 Entrance Detection System - Amazon Rekognition</strong>
+          <strong>🚪 High-Accuracy Detection System - Amazon Rekognition</strong>
           <ul>
             <li>
-              <strong>⚡ AWS Rekognition:</strong> Enterprise-grade face detection with accurate age and gender recognition
+              <strong>⚡ Maximum Accuracy:</strong> 95% JPEG quality + HD resolution for precise detection
             </li>
             <li>
-              <strong>👥 Multiple Faces:</strong> Detects all people in frame simultaneously with individual analysis
+              <strong>👥 Multiple Faces:</strong> Detects all people in frame with individual age & gender analysis
             </li>
             <li>
-              <strong>🎯 Accurate Detection:</strong> Each person gets their own age range and gender classification
+              <strong>🚫 Smart Tracking:</strong> Same person detected again after 12 hours
             </li>
             <li>
-              <strong>🚫 No Duplicates:</strong> Same person won't be counted twice within 1 hour
-            </li>
-            <li>
-              <strong>📊 Real-time Processing:</strong> Analyzes frames every 2 seconds for optimal performance
+              <strong>📊 Real-time Processing:</strong> Scans every second with AWS Rekognition AI
             </li>
           </ul>
         </div>

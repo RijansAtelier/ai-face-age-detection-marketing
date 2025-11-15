@@ -160,10 +160,10 @@ app.post('/api/detections', authenticateToken, (req, res) => {
   
   // Handle legacy array-based descriptors (face-api.js)
   else if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
     const recentDetections = db.prepare(
       'SELECT * FROM detections WHERE timestamp > ?'
-    ).all(oneHourAgo);
+    ).all(twelveHoursAgo);
     
     const MATCH_THRESHOLD = 0.6;
     
@@ -178,7 +178,7 @@ app.post('/api/detections', authenticateToken, (req, res) => {
               return res.json({ 
                 id: detection.id, 
                 duplicate: true, 
-                message: 'Person already detected within the last hour',
+                message: 'Person already detected within the last 12 hours',
                 lastDetected: detection.timestamp
               });
             }
@@ -286,10 +286,10 @@ function checkRekognitionDuplicate(age, gender, faceDescriptor) {
     return null;
   }
   
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
   const recentDetections = db.prepare(
     'SELECT * FROM detections WHERE timestamp > ? AND gender = ? AND ABS(age - ?) <= 3'
-  ).all(oneHourAgo, gender, age);
+  ).all(twelveHoursAgo, gender, age);
   
   const currentBox = normalizeBoundingBox(faceDescriptor.boundingBox);
   
@@ -373,10 +373,10 @@ app.post('/api/detections/kiosk', authenticateKioskKey, (req, res) => {
   
   // Handle legacy array-based descriptors (face-api.js)
   else if (faceDescriptor && Array.isArray(faceDescriptor) && faceDescriptor.length > 0) {
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString();
     const recentDetections = db.prepare(
       'SELECT * FROM detections WHERE timestamp > ?'
-    ).all(oneHourAgo);
+    ).all(twelveHoursAgo);
     
     const MATCH_THRESHOLD = 0.6;
     
@@ -391,7 +391,7 @@ app.post('/api/detections/kiosk', authenticateKioskKey, (req, res) => {
               return res.json({ 
                 id: detection.id, 
                 duplicate: true, 
-                message: 'Person already detected within the last hour',
+                message: 'Person already detected within the last 12 hours',
                 lastDetected: detection.timestamp
               });
             }

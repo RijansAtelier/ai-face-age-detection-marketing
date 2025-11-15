@@ -34,11 +34,13 @@ A full-stack SaaS application for real-time face detection using AWS Rekognition
    - Clear all data functionality
    - Logout option
 
-3. **Face Detection (AWS Rekognition)**:
-   - Accurate age and gender estimation
-   - Real-time bounding box visualization
-   - Duplicate detection (prevents counting same person within 1 hour using IoU algorithm)
-   - Confidence scores for each detection
+3. **Face Detection (AWS Rekognition - High Accuracy Mode)**:
+   - **95% JPEG Quality**: Maximum image quality sent to AWS for precise analysis
+   - **HD Resolution**: 1920x1080 video capture (minimum 1280x720)
+   - **Confidence Filtering**: Only displays detections with 90%+ confidence
+   - **Faster Scanning**: Analyzes frames every 1 second for real-time detection
+   - **Clean Display**: Green bounding boxes with age and gender (no confidence scores shown)
+   - **Smart Tracking**: Same person detected again after 12 hours using IoU algorithm
 
 ## Technology Stack
 - **Frontend**: React 19, Vite 7
