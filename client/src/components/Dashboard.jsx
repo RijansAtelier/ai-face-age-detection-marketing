@@ -225,115 +225,13 @@ function Dashboard({ username, onLogout, token }) {
   }, [ageRangeMode]);
 
   return (
-    <div className="dashboard">
-      <header className="dashboard-header">
-        <h1>AI Face Detection Dashboard</h1>
-        <div className="header-actions">
-          <span className="username">Welcome, {username}</span>
-          <button onClick={onLogout} className="logout-btn">Logout</button>
-        </div>
-      </header>
+    <div className="dashboard-minimal">
+      <button className="floating-logout-button" onClick={onLogout}>
+        ×
+      </button>
 
-      <div className="dashboard-content">
-        <div className="stats-panel">
-          <div className="stat-card">
-            <h3>Total Visitors</h3>
-            <p className="stat-value">{stats.total}</p>
-            <span className="stat-label">Total detected</span>
-          </div>
-          <div className="stat-card">
-            <h3>Gender Split</h3>
-            <div className="gender-split">
-              <div className="gender-bar">
-                <div 
-                  className="gender-bar-male" 
-                  style={{width: `${stats.total > 0 ? (stats.male / stats.total * 100) : 0}%`}}
-                >
-                  <span>{stats.male} M</span>
-                </div>
-                <div 
-                  className="gender-bar-female" 
-                  style={{width: `${stats.total > 0 ? (stats.female / stats.total * 100) : 0}%`}}
-                >
-                  <span>{stats.female} F</span>
-                </div>
-              </div>
-              <div className="gender-percentages">
-                <span className="male-pct">{stats.total > 0 ? ((stats.male / stats.total * 100).toFixed(1)) : 0}%</span>
-                <span className="female-pct">{stats.total > 0 ? ((stats.female / stats.total * 100).toFixed(1)) : 0}%</span>
-              </div>
-            </div>
-          </div>
-          <div className="stat-card">
-            <h3>Average Age</h3>
-            <p className="stat-value">{stats.averageAge}</p>
-            <span className="stat-label">years old</span>
-          </div>
-          <div className="stat-card demographics">
-            <div className="demographics-header">
-              <h3>Age Demographics</h3>
-              <div className="range-mode-selector">
-                <button 
-                  className={`mode-btn ${ageRangeMode === '5-year' ? 'active' : ''}`}
-                  onClick={() => {
-                    setAgeRangeMode('5-year');
-                    calculateAgeDistribution(detections);
-                  }}
-                >
-                  5-Year Ranges
-                </button>
-                <button 
-                  className={`mode-btn ${ageRangeMode === '10-year' ? 'active' : ''}`}
-                  onClick={() => {
-                    setAgeRangeMode('10-year');
-                    calculateAgeDistribution(detections);
-                  }}
-                >
-                  10-Year Ranges
-                </button>
-              </div>
-            </div>
-            <div className="age-demographics">
-              {Object.entries(ageDistribution).map(([range, count]) => {
-                const percentage = stats.total > 0 ? ((count / stats.total) * 100).toFixed(1) : 0;
-                return (
-                  <div key={range} className="age-range">
-                    <span className="age-label">{range}</span>
-                    <div className="age-bar-container">
-                      <div 
-                        className="age-bar-fill" 
-                        style={{width: `${stats.total > 0 ? (count / stats.total * 100) : 0}%`}}
-                      >
-                        {count > 0 && <span className="age-bar-text">{percentage}%</span>}
-                      </div>
-                    </div>
-                    <span className="age-count">{count}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="main-panel">
-          <div className="camera-section">
-            {detectionMessage && (
-              <div className={`detection-message ${detectionMessage.type}`}>
-                {detectionMessage.text}
-              </div>
-            )}
-            <RekognitionFaceDetection onDetection={handleDetection} token={token} />
-          </div>
-
-          <div className="actions-section">
-            <button onClick={exportToPDF} className="action-btn export-btn">
-              Export to PDF
-            </button>
-            <button onClick={clearData} className="action-btn clear-btn">
-              Clear Data
-            </button>
-          </div>
-        </div>
+      <div className="fullscreen-camera">
+        <RekognitionFaceDetection onDetection={handleDetection} token={token} />
       </div>
     </div>
   );
