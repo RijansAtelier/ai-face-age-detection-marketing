@@ -79,7 +79,7 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext('2d');
     
-    // Use high-quality settings for better AWS Rekognition accuracy
+    // Use high-quality settings for better accuracy
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(video, 0, 0);
@@ -98,7 +98,7 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
       // Convert data URL to blob
       const base64Data = frameDataUrl.split(',')[1];
 
-      // Send to backend for Rekognition processing
+      // Send to backend for processing
       const headers = {
         'Content-Type': 'application/json',
       };
@@ -217,14 +217,14 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
 
   return (
     <div className="face-detection">
-      <h2>Live Camera Feed - Amazon Rekognition</h2>
+      <h2>Live Camera Feed</h2>
 
       {isLoading && <div className="loading">Initializing camera...</div>}
       {error && <div className="error">{error}</div>}
 
       {!isLoading && !error && (
         <div className="accuracy-tips">
-          <strong>🚪 High-Accuracy Detection System - Amazon Rekognition</strong>
+          <strong>🚪 High-Accuracy Detection System</strong>
           <ul>
             <li>
               <strong>⚡ Maximum Accuracy:</strong> 95% JPEG quality + HD resolution for precise detection
@@ -236,7 +236,7 @@ function RekognitionFaceDetection({ onDetection, isKioskMode = false, token = nu
               <strong>🚫 Smart Tracking:</strong> Same person detected again after 12 hours
             </li>
             <li>
-              <strong>📊 Real-time Processing:</strong> Scans every second with AWS Rekognition AI
+              <strong>📊 Real-time Processing:</strong> Scans every second with AI
             </li>
           </ul>
         </div>
